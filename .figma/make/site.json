@@ -1,0 +1,10 @@
+{
+  "description": "Streamline the Engineer Job Order creation process by connecting existing screens for efficient customer and vehicle management, enhancing workflow productivity.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
