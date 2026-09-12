@@ -14,6 +14,7 @@ namespace StarAutoCenter.DTOs.Warehouse
 
     public class WarehouseJobDto
     {
+        public int Id { get; set; }
         public string Number { get; set; } = string.Empty;
         public string Date { get; set; } = string.Empty;
         public string Vehicle { get; set; } = string.Empty;
@@ -39,6 +40,8 @@ namespace StarAutoCenter.DTOs.Warehouse
         public int MinQty { get; set; }
         public string? Location { get; set; }
         public string Status { get; set; } = string.Empty;
+        public decimal PurchasePrice { get; set; } = 0;
+        public decimal SellingPrice { get; set; } = 0;
     }
 
     public class PartSummaryDto
@@ -62,6 +65,8 @@ namespace StarAutoCenter.DTOs.Warehouse
         public int CurrentQty { get; set; }
         public int MinQty { get; set; }
         public string? Location { get; set; }
+        public decimal PurchasePrice { get; set; } = 0;
+        public decimal SellingPrice { get; set; } = 0;
     }
 
     public class PartDetailsDto

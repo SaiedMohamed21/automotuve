@@ -5,6 +5,7 @@ using StarAutoCenter.Services.Warehouse;
 
 namespace StarAutoCenter.Controllers.Warehouse
 {
+    [Authorize(Roles = "Warehouse,Owner,Engineer")]
     [ApiController]
     [Route("api/warehouse")]
     public class WarehouseController : ControllerBase
@@ -46,15 +47,26 @@ namespace StarAutoCenter.Controllers.Warehouse
         [HttpPost("parts")]
         public async Task<IActionResult> CreatePart([FromBody] CreatePartDto dto)
         {
-            var result = await _warehouseService.CreatePartAsync(dto);
-            return CreatedAtAction(nameof(GetPartDetails), new { id = result.Id }, result);
+            try
+            {
+                var result = await _warehouseService.CreatePartAsync(dto);
+                return CreatedAtAction(nameof(GetPartDetails), new { id = result.Id }, result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
         }
 
         // ── Jobs ──
         [HttpGet("jobs")]
-        public async Task<IActionResult> GetOpenJobs([FromQuery] string? search = null)
+        public async Task<IActionResult> GetOpenJobs([FromQuery] string? search = null, [FromQuery] string? status = null)
         {
-            var result = await _warehouseService.GetOpenJobsAsync(search);
+            var result = await _warehouseService.GetOpenJobsAsync(search, status);
             return Ok(result);
         }
 

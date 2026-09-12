@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -11,11 +12,26 @@ using StarAutoCenter.Services.Auth;
 using StarAutoCenter.Services.Engineer;
 using StarAutoCenter.Services.Owner;
 using StarAutoCenter.Services.Warehouse;
+using StarAutoCenter.Services.Accountant;
+using StarAutoCenter.Services.Payroll;
+using StarAutoCenter.Services.Suppliers;
+using StarAutoCenter.Services.Expenses;
+using StarAutoCenter.Services.Settings;
 
 using StarAutoCenter.Models.Enums;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5000");
+
+// ── Railway Dynamic Port Configuration ──
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+else
+{
+    builder.WebHost.UseUrls("http://0.0.0.0:5000");
+}
 
 // ── Database ──
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -28,7 +44,7 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.Password.RequireLowercase = false;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
+    options.Password.RequiredLength = 4;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
@@ -50,7 +66,9 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "StarAutoCenter",
         ValidAudience = builder.Configuration["Jwt:Audience"] ?? "StarAutoCenter",
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        RoleClaimType = ClaimTypes.Role,
+        NameClaimType = ClaimTypes.Name
     };
 });
 
@@ -62,19 +80,36 @@ builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IJobOrderService, JobOrderService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<IOwnerService, OwnerService>();
+builder.Services.AddScoped<IAccountantService, AccountantService>();
+builder.Services.AddScoped<IPayrollService, PayrollService>();
+builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<IExpenseService, ExpenseService>();
+builder.Services.AddScoped<IWorkshopSettingsService, WorkshopSettingsService>();
 
 // ── CORS ──
-var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>()
-    ?? new[] { "http://localhost:5173", "http://localhost:3000" };
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(corsOrigins)
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
+        var originsStr = builder.Configuration["Cors:Origins"];
+        var configuredOrigins = !string.IsNullOrWhiteSpace(originsStr)
+            ? originsStr.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : builder.Configuration.GetSection("Cors:Origins").Get<string[]>();
+
+        if (configuredOrigins != null && configuredOrigins.Length > 0)
+        {
+            policy.WithOrigins(configuredOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.SetIsOriginAllowed(_ => true)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
     });
 });
 
@@ -85,9 +120,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Star Auto Center API",
+        Title = "SOS Motor Works API",
         Version = "v1",
-        Description = "Backend API for Star Auto Center — Workshop Management System"
+        Description = "Backend API for SOS Motor Works — Workshop Management System"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -119,14 +154,54 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Star Auto Center API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SOS Motor Works API v1");
     c.RoutePrefix = "swagger";
 });
 
 app.UseCors("AllowFrontend");
+
+// Serve SPA static files from wwwroot
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// Serve uploads directory if located outside wwwroot or custom path
+var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
+if (Directory.Exists(uploadsPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
+        RequestPath = "/uploads"
+    });
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// ── Unauthenticated Health Endpoint ──
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapGet("/api", () => Results.Json(new
+{
+    status = "Online",
+    service = "SOS Motor Works Workshop API",
+    swagger = "/swagger",
+    health = "/api/health",
+    endpoints = new[]
+    {
+        "/api/health",
+        "/api/customers",
+        "/api/vehicles",
+        "/api/joborders",
+        "/api/parts",
+        "/api/invoices",
+        "/api/additionalexpenses"
+    }
+}));
+
+// SPA Fallback for client-side React routes
+app.MapFallbackToFile("index.html");
 
 // ── Seed Database ──
 using (var scope = app.Services.CreateScope())
@@ -137,35 +212,12 @@ using (var scope = app.Services.CreateScope())
         var context = services.GetRequiredService<ApplicationDbContext>();
         context.Database.Migrate();
 
-        // Create roles
-        var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-        string[] roles = { "Engineer", "Warehouse", "Accountant", "Owner" };
-        foreach (var role in roles)
-        {
-            if (!await roleManager.RoleExistsAsync(role))
-                await roleManager.CreateAsync(new IdentityRole(role));
-        }
-
-        // Create default owner account
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        var ownerEmail = "owner@starauto.com";
-        if (await userManager.FindByEmailAsync(ownerEmail) == null)
-        {
-            var owner = new ApplicationUser
-            {
-                UserName = ownerEmail,
-                Email = ownerEmail,
-                FullName = "Admin Owner",
-                Phone = "01000000000",
-                Role = UserRole.Owner,
-                IsActive = true
-            };
-            await userManager.CreateAsync(owner, "Owner@123");
-            await userManager.AddToRoleAsync(owner, "Owner");
-        }
+        var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
 
-        // Seed data
+        // Seed data & accounts
         SeedData.Initialize(context);
+        await SeedData.SeedUsersAsync(userManager, roleManager);
     }
     catch (Exception ex)
     {

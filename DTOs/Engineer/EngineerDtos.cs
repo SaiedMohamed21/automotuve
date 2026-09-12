@@ -103,6 +103,7 @@ namespace StarAutoCenter.DTOs.Engineer
     // ── Job Order ──
     public class JobOrderListDto
     {
+        public int Id { get; set; }
         public string Number { get; set; } = string.Empty;
         public string? Date { get; set; }
         public string Customer { get; set; } = string.Empty;
@@ -127,6 +128,7 @@ namespace StarAutoCenter.DTOs.Engineer
 
     public class JobOrderDetailsDto
     {
+        public int Id { get; set; }
         public string Number { get; set; } = string.Empty;
         public string Date { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;

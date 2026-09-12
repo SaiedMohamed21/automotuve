@@ -18,7 +18,7 @@ namespace StarAutoCenter.Services.Warehouse
         Task<PartDto> CreatePartAsync(CreatePartDto dto);
 
         // Jobs & Issue
-        Task<List<WarehouseJobDto>> GetOpenJobsAsync(string? search = null);
+        Task<List<WarehouseJobDto>> GetOpenJobsAsync(string? search = null, string? status = null);
         Task<List<IssuedPartDto>> GetIssuedPartsAsync(string joNumber);
         Task<List<IssuedPartDto>> IssuePartsAsync(string joNumber, IssuePartRequestDto dto);
         Task<bool> RemoveIssuedPartAsync(string joNumber, int partId);
@@ -64,6 +64,7 @@ namespace StarAutoCenter.Services.Warehouse
                 .OrderByDescending(j => j.Date)
                 .Select(j => new WarehouseJobDto
                 {
+                    Id = j.Id,
                     Number = j.Number,
                     Date = j.Date.ToString("dd MMM yyyy"),
                     Vehicle = j.Vehicle.Make + " " + j.Vehicle.Model,
@@ -135,7 +136,9 @@ namespace StarAutoCenter.Services.Warehouse
                 CurrentQty = p.CurrentQty,
                 MinQty = p.MinQty,
                 Location = p.Location,
-                Status = p.Status.ToString()
+                Status = p.Status.ToString(),
+                PurchasePrice = p.PurchasePrice,
+                SellingPrice = p.SellingPrice
             }).ToList();
         }
 
@@ -171,7 +174,9 @@ namespace StarAutoCenter.Services.Warehouse
                     CurrentQty = part.CurrentQty,
                     MinQty = part.MinQty,
                     Location = part.Location,
-                    Status = part.Status.ToString()
+                    Status = part.Status.ToString(),
+                    PurchasePrice = part.PurchasePrice,
+                    SellingPrice = part.SellingPrice
                 },
                 Movements = movements
             };
@@ -179,17 +184,44 @@ namespace StarAutoCenter.Services.Warehouse
 
         public async Task<PartDto> CreatePartAsync(CreatePartDto dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+                throw new ArgumentException("Part Name is required.");
+
+            // Check duplicate by Part Number if provided
+            if (!string.IsNullOrWhiteSpace(dto.Number))
+            {
+                var trimmedNum = dto.Number.Trim();
+                var existingByNum = await _context.Parts.FirstOrDefaultAsync(p => p.Number.ToLower() == trimmedNum.ToLower());
+                if (existingByNum != null)
+                {
+                    throw new InvalidOperationException($"Part Number '{trimmedNum}' already exists for part '{existingByNum.Name}' (ID #{existingByNum.Id}).");
+                }
+            }
+
+            // Check duplicate by OEM if provided
+            if (!string.IsNullOrWhiteSpace(dto.OEM))
+            {
+                var trimmedOem = dto.OEM.Trim();
+                var existingByOem = await _context.Parts.FirstOrDefaultAsync(p => p.OEM != null && p.OEM.ToLower() == trimmedOem.ToLower());
+                if (existingByOem != null)
+                {
+                    throw new InvalidOperationException($"OEM Number '{trimmedOem}' already exists for part '{existingByOem.Name}' (ID #{existingByOem.Id}).");
+                }
+            }
+
             var part = new Part
             {
-                Name = dto.Name,
-                Number = dto.Number,
-                OEM = dto.OEM,
-                Brand = dto.Brand,
-                Category = dto.Category,
+                Name = dto.Name.Trim(),
+                Number = string.IsNullOrWhiteSpace(dto.Number) ? $"PN-{DateTime.UtcNow.Ticks}" : dto.Number.Trim(),
+                OEM = dto.OEM?.Trim(),
+                Brand = dto.Brand?.Trim(),
+                Category = string.IsNullOrWhiteSpace(dto.Category) ? "Other" : dto.Category.Trim(),
                 CompatibleVehicles = dto.CompatibleVehicles != null ? JsonSerializer.Serialize(dto.CompatibleVehicles) : null,
                 CurrentQty = dto.CurrentQty,
                 MinQty = dto.MinQty,
                 Location = dto.Location,
+                PurchasePrice = dto.PurchasePrice,
+                SellingPrice = dto.SellingPrice,
                 Status = dto.CurrentQty <= 0 ? PartStockStatus.OutOfStock : dto.CurrentQty <= dto.MinQty ? PartStockStatus.LowStock : PartStockStatus.InStock
             };
 
@@ -222,17 +254,31 @@ namespace StarAutoCenter.Services.Warehouse
                 CurrentQty = part.CurrentQty,
                 MinQty = part.MinQty,
                 Location = part.Location,
-                Status = part.Status.ToString()
+                Status = part.Status.ToString(),
+                PurchasePrice = part.PurchasePrice,
+                SellingPrice = part.SellingPrice
             };
         }
 
-        public async Task<List<WarehouseJobDto>> GetOpenJobsAsync(string? search = null)
+        public async Task<List<WarehouseJobDto>> GetOpenJobsAsync(string? search = null, string? status = null)
         {
             var query = _context.JobOrders
                 .Include(j => j.Customer)
                 .Include(j => j.Vehicle)
                 .Include(j => j.IssuedParts)
-                .Where(j => j.Status == JobOrderStatus.Open);
+                .AsQueryable();
+
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(j => j.Status == JobOrderStatus.Open);
+            }
+            else if (!status.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Enum.TryParse<JobOrderStatus>(status, true, out var statusEnum))
+                {
+                    query = query.Where(j => j.Status == statusEnum);
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -247,6 +293,7 @@ namespace StarAutoCenter.Services.Warehouse
             return await query.OrderByDescending(j => j.Date)
                 .Select(j => new WarehouseJobDto
                 {
+                    Id = j.Id,
                     Number = j.Number,
                     Date = j.Date.ToString("dd MMM yyyy"),
                     Vehicle = j.Vehicle.Make + " " + j.Vehicle.Model,
@@ -329,6 +376,15 @@ namespace StarAutoCenter.Services.Warehouse
 
             if (jo == null) return false;
 
+            if (jo.IssuedParts == null || !jo.IssuedParts.Any()) return false;
+
+            // Strict inventory validation: verify all parts have positive qty and sufficient stock
+            foreach (var ip in jo.IssuedParts)
+            {
+                if (ip.Qty <= 0) return false;
+                if (ip.Part.CurrentQty < ip.Qty) return false;
+            }
+
             foreach (var ip in jo.IssuedParts)
             {
                 ip.Part.CurrentQty = Math.Max(0, ip.Part.CurrentQty - ip.Qty);
@@ -346,6 +402,8 @@ namespace StarAutoCenter.Services.Warehouse
                     Qty = -ip.Qty
                 });
             }
+
+            jo.Status = JobOrderStatus.Complete;
 
             await _context.SaveChangesAsync();
             return true;

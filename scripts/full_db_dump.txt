@@ -1,0 +1,319 @@
+==================================================
+STAR AUTO CENTER - FULL DATABASE INVENTORY AUDIT
+==================================================
+
+==========================================
+TABLE: __EFMigrationsHistory
+==========================================
+
+MigrationId                              ProductVersion
+-----------                              --------------
+20260909205751_InitDB                    8.0.8         
+20260909214633_InitDBb                   8.0.8         
+20260911110242_AddAccountantModule       8.0.8         
+20260912041055_AddPayrollModule          8.0.8         
+20260912155910_AddSupplierModule         8.0.8         
+20260912165703_AddExpensesModule         8.0.8         
+20260912181458_AddWorkshopBrandingFields 8.0.8         
+
+
+
+
+==========================================
+TABLE: AdditionalExpenses
+==========================================
+[0 rows]
+
+==========================================
+TABLE: AspNetRoleClaims
+==========================================
+[0 rows]
+
+==========================================
+TABLE: AspNetRoles
+==========================================
+
+Id                                   Name       NormalizedName ConcurrencyStamp
+--                                   ----       -------------- ----------------
+36815a5c-177b-4beb-8e61-fad64c73fa53 Warehouse  WAREHOUSE                      
+64cec14e-3995-4126-a13b-1b72e7112c2e Owner      OWNER                          
+94f5540c-b540-4620-bcc5-eb2729be7e59 Accountant ACCOUNTANT                     
+fec7c63c-833a-4690-860a-d4d275fdc868 Engineer   ENGINEER                       
+
+
+
+
+==========================================
+TABLE: AspNetUserClaims
+==========================================
+[0 rows]
+
+==========================================
+TABLE: AspNetUserLogins
+==========================================
+[0 rows]
+
+==========================================
+TABLE: AspNetUserRoles
+==========================================
+
+UserId                               RoleId                              
+------                               ------                              
+8a46cdce-38b2-4d34-a825-06096fe2a310 36815a5c-177b-4beb-8e61-fad64c73fa53
+3b8dc3bb-8679-4fdc-b544-3d929322d7a3 64cec14e-3995-4126-a13b-1b72e7112c2e
+b7fc2a77-46cc-481d-882c-c7a79adbe747 64cec14e-3995-4126-a13b-1b72e7112c2e
+a2098a6f-c6c1-44e2-bece-7d6bae9aa75e 94f5540c-b540-4620-bcc5-eb2729be7e59
+ecb559ca-72c7-4c23-8652-7bbbbf0ac653 94f5540c-b540-4620-bcc5-eb2729be7e59
+5c620ef0-3327-4d68-9b9b-c0141b80dd76 fec7c63c-833a-4690-860a-d4d275fdc868
+d410a6c8-29f7-4800-a1c6-c0a280f98678 fec7c63c-833a-4690-860a-d4d275fdc868
+eac0b8f5-aa10-4650-8a0e-ccbdc182bea4 fec7c63c-833a-4690-860a-d4d275fdc868
+
+
+
+
+==========================================
+TABLE: AspNetUsers
+==========================================
+
+Id                                   FullName                Phone       Role IsActive LastActivity         CreatedAt  
+--                                   --------                -----       ---- -------- ------------         ---------  
+3b8dc3bb-8679-4fdc-b544-3d929322d7a3 Saied Owner             01000000001    3     True 9/12/2026 7:30:37 PM 9/12/202...
+5c620ef0-3327-4d68-9b9b-c0141b80dd76                         0123456789     0    False 9/12/2026 5:48:36 PM 9/12/202...
+8a46cdce-38b2-4d34-a825-06096fe2a310 Saied Warehouse         01000000003    1     True 9/12/2026 7:01:00 PM 9/12/202...
+a2098a6f-c6c1-44e2-bece-7d6bae9aa75e Audit Test User Updated 01011112222    2     True 9/12/2026 7:26:14 PM 9/12/202...
+b7fc2a77-46cc-481d-882c-c7a79adbe747 Admin Owner             01000000000    3     True 9/11/2026 5:12:59 PM 9/9/2026...
+d410a6c8-29f7-4800-a1c6-c0a280f98678                         0123456789     0     True 9/12/2026 5:48:22 PM 9/12/202...
+eac0b8f5-aa10-4650-8a0e-ccbdc182bea4 Saied Engineer          01000000004    0     True 9/12/2026 7:30:37 PM 9/12/202...
+ecb559ca-72c7-4c23-8652-7bbbbf0ac653 Saied Accountant        01000000002    2     True 9/12/2026 7:02:25 PM 9/12/202...
+
+
+
+
+==========================================
+TABLE: AspNetUserTokens
+==========================================
+[0 rows]
+
+==========================================
+TABLE: AttendanceRecords
+==========================================
+[0 rows]
+
+==========================================
+TABLE: BusinessSettings
+==========================================
+[0 rows]
+
+==========================================
+TABLE: Customers
+==========================================
+[0 rows]
+
+==========================================
+TABLE: DeferredWorks
+==========================================
+[0 rows]
+
+==========================================
+TABLE: Expenses
+==========================================
+
+Id ExpenseNumber  ExpenseDate           Category    Description                              Amount PaymentMethod Refer
+                                                                                                                  ence 
+-- -------------  -----------           --------    -----------                              ------ ------------- -----
+ 1 EXP-2026-00001 9/12/2026 12:00:00 AM Electricity Workshop electricity bill               3500.00 Cash          EL...
+ 2 EXP-2026-00002 9/12/2026 12:00:00 AM Plumbing    Repair water leak in customer restroom   850.00 Cash          PL...
+ 3 EXP-2026-00003 9/12/2026 12:00:00 AM Water       Water bill                               450.00 InstaPay      TX...
+ 4 EXP-2026-00004 9/12/2026 12:00:00 AM Rent        Workshop monthly rent                  30000.00 Bank Transfer BA...
+ 5 EXP-2026-00005 9/12/2026 12:00:00 AM Fuel        Generator fuel                           600.00 Cash               
+
+
+
+
+==========================================
+TABLE: Invoices
+==========================================
+[0 rows]
+
+==========================================
+TABLE: IssuedParts
+==========================================
+[0 rows]
+
+==========================================
+TABLE: JobOrders
+==========================================
+
+Id Number        Date                 Status Type               RequiredWork CompletedWork Notes                       
+-- ------        ----                 ------ ----               ------------ ------------- -----                       
+ 2 JO-2026-00001 9/12/2026 4:29:37 AM      2 General Inspection                            Periodic maintenance and ...
+ 3 JO-2026-00002 9/12/2026 4:35:19 AM      0 General Inspection                                                        
+ 4 JO-2026-00003 9/12/2026 6:42:04 PM      0 General Inspection                            ???? ???? ???? ...          
+
+
+
+
+==========================================
+TABLE: JobOrderWorkItems
+==========================================
+
+Id Note IsDeferred IsRecommended JobOrderId
+-- ---- ---------- ------------- ----------
+ 1           False         False          2
+ 2            True         False          2
+ 3           False         False          4
+
+
+
+
+==========================================
+TABLE: Parts
+==========================================
+
+Id Name                Number  OEM       Brand          Category CompatibleVehicles      CurrentQty MinQty Location 
+-- ----                ------  ---       -----          -------- ------------------      ---------- ------ -------- 
+ 4 Oil Filter ???? ??? OF-101  TOY-15601 Toyota Genuine Filters                                 118      5 Shelf A-1
+ 5 Brake Pads Ceramic  BP-8820 OEM-BP-99 Bosch          Brakes   ["Toyota Corolla 2022"]        170      4 Shelf B-3
+ 6 oil                 wdopwmf 666       shell          oil      ["dwd wf"]                      20     10 TBD      
+ 7 oil                 wd,,wwf mwmpfp    mobel          oil      ["d d"]                         50     20 TBD      
+
+
+
+
+==========================================
+TABLE: Payments
+==========================================
+
+Id Amount Date                 Method Note            InvoiceId
+-- ------ ----                 ------ ----            ---------
+ 0 500.00 9/12/2026 4:50:18 AM      0 ???? ????? ????         0
+ 1  50.00 9/12/2026 6:47:30 PM      0                         0
+ 2 175.00 9/12/2026 6:47:30 PM      0                         0
+
+
+
+
+==========================================
+TABLE: PayrollTransactions
+==========================================
+
+Id          TechnicianId  Date       Type               Amount Notes              Status Reason PaymentMethod CreatedAt
+--          ------------  ----       ----               ------ -----              ------ ------ ------------- ---------
+tx-3e4c3f5d tech-e9915ad0 2026-09-12 SALARY_PAYMENT    -200.00 ??? ?????? ??????? Paid          Cash          9/12/2...
+tx-ed73baed tech-e9915ad0 2026-09-12 ADVANCE           -300.00 ???? ?????         Paid          Cash          9/12/2...
+tx-f320afc1 tech-e9915ad0 2026-09-12 ADVANCE_REPAYMENT -200.00 ???? ??? ?? ?????? Paid                        9/12/2...
+
+
+
+
+==========================================
+TABLE: ServiceHistories
+==========================================
+
+Id JobOrderNumber Date                 Km    Inspection Status VehicleId
+-- -------------- ----                 --    ---------- ------ ---------
+ 2 JO-2026-00001  9/12/2026 4:29:37 AM 50000                 0         2
+ 3 JO-2026-00002  9/12/2026 4:35:19 AM 50000                 0         2
+ 4 JO-2026-00003  9/12/2026 6:42:04 PM 50000                 0         2
+
+
+
+
+==========================================
+TABLE: StockMovements
+==========================================
+
+Id Type Reference      Note                                                             Date                  Qty PartI
+                                                                                                                      d
+-- ---- ---------      ----                                                             ----                  --- -----
+ 3    1 OF-101         Initial Stock / Added Part                                       9/12/2026 4:50:17 AM   20     4
+ 4    0 JO-2026-00001  Issued to JO-2026-00001                                          9/12/2026 4:50:17 AM   -2     4
+ 5    1 BP-8820        Initial Stock / Added Part                                       9/12/2026 4:06:41 PM   10     5
+ 6    1 PUR-2026-00001 Supplier Purchase: PUR-2026-00001 (Supplier A)                   8/12/2026 10:00:00 AM 100     5
+ 7    1 PUR-2026-00002 Supplier Purchase: PUR-2026-00002 (Supplier A)                   9/5/2026 10:00:00 AM   60     5
+ 8    1 PUR-2026-00003 Supplier Purchase: PUR-2026-00003 (El-Nasr Radiators & Coolants) 9/11/2026 9:00:00 AM  100     4
+ 9    1 wdopwmf        Initial Stock / Added Part                                       9/12/2026 7:01:48 PM   20     6
+10    1 wd,,wwf        Initial Stock / Added Part                                       9/12/2026 7:02:15 PM   50     7
+
+
+
+
+==========================================
+TABLE: SupplierAccountTransactions
+==========================================
+
+Id SupplierId TransactionDate       TransactionType ReferenceNumber Description                                        
+-- ---------- ---------------       --------------- --------------- -----------                                        
+ 1          1 8/12/2026 10:00:00 AM PURCHASE        PUR-2026-00001  Purchase PUR-2026-00001 (1 items)                  
+ 2          1 8/15/2026 12:00:00 PM PAYMENT         SPAY-2026-00001 Supplier Payment (Bank Transfer) Ref: TX-BNK-990...
+ 3          1 9/1/2026 2:00:00 PM   PAYMENT         SPAY-2026-00002 Supplier Payment (InstaPay) Ref: INSTA-55201 ? S...
+ 4          1 9/5/2026 10:00:00 AM  PURCHASE        PUR-2026-00002  Purchase PUR-2026-00002 (1 items)                  
+ 5          1 9/10/2026 4:00:00 PM  PAYMENT         SPAY-2026-00003 Supplier Payment (Cash) Ref: CASH-REC-101 ? Fina...
+ 6          2 9/11/2026 9:00:00 AM  PURCHASE        PUR-2026-00003  Purchase PUR-2026-00003 (1 items)                  
+ 7          2 9/11/2026 9:00:00 AM  PAYMENT         SPAY-2026-00004 Initial payment for PUR-2026-00003 (Cash)          
+
+
+
+
+==========================================
+TABLE: SupplierPayments
+==========================================
+
+Id PaymentNumber   SupplierId PurchaseId   Amount PaymentDate           PaymentMethod Reference        Notes           
+-- -------------   ---------- ----------   ------ -----------           ------------- ---------        -----           
+ 1 SPAY-2026-00001          1            20000.00 8/15/2026 12:00:00 PM Bank Transfer TX-BNK-9901      First payment...
+ 2 SPAY-2026-00002          1            10000.00 9/1/2026 2:00:00 PM   InstaPay      INSTA-55201      Second paymen...
+ 3 SPAY-2026-00003          1            50000.00 9/10/2026 4:00:00 PM  Cash          CASH-REC-101     Final settlem...
+ 4 SPAY-2026-00004          2 3           5000.00 9/11/2026 9:00:00 AM  Cash          CASH-REC-DOWN-01 Initial payme...
+
+
+
+
+==========================================
+TABLE: SupplierPurchaseItems
+==========================================
+
+Id PurchaseId PartId Quantity UnitPrice TotalPrice
+-- ---------- ------ -------- --------- ----------
+ 1          1      5      100    500.00   50000.00
+ 2          2      5       60    500.00   30000.00
+ 3          3      4      100    250.00   25000.00
+
+
+
+
+==========================================
+TABLE: SupplierPurchases
+==========================================
+
+Id PurchaseNumber SupplierId PurchaseDate          DueDate Notes                                                TotalAm
+                                                                                                                   ount
+-- -------------- ---------- ------------          ------- -----                                                -------
+ 1 PUR-2026-00001          1 8/12/2026 10:00:00 AM         Initial stock purchase - 100 sets of brake pads      ...0.00
+ 2 PUR-2026-00002          1 9/5/2026 10:00:00 AM          Second stock purchase - 60 additional brake pad sets ...0.00
+ 3 PUR-2026-00003          2 9/11/2026 9:00:00 AM          Oil filter bulk purchase with 5,000 EGP down payment ...0.00
+
+
+
+
+==========================================
+TABLE: Suppliers
+==========================================
+
+Id Name                         Phone       Company                   Address                        Notes             
+-- ----                         -----       -------                   -------                        -----             
+ 1 Supplier A                   01011223344 Supplier A Trading Co.    12 Industrial Zone, Cairo      Official engine...
+ 2 El-Nasr Radiators & Coolants 01288997766 El-Nasr Industrial Supply 6th of October Industrial City Payment terms: ...
+
+
+
+
+==========================================
+TABLE: Technicians
+==========================================
+[0 rows]
+
+==========================================
+TABLE: Vehicles
+==========================================
+[0 rows]

@@ -16,7 +16,9 @@ namespace StarAutoCenter.Services.Owner
         // Users
         Task<List<UserDto>> GetUsersAsync(string? search = null, string? role = null, string? status = null);
         Task<UserDto> CreateUserAsync(CreateUserDto dto);
+        Task<UserDto> UpdateUserAsync(string userId, UpdateUserDto dto);
         Task<bool> ToggleUserStatusAsync(string userId);
+        Task<bool> ChangePasswordAsync(string userId, string newPassword);
 
         // Settings
         Task<BusinessSettingsDto> GetSettingsAsync();
@@ -42,13 +44,49 @@ namespace StarAutoCenter.Services.Owner
             var totalParts = await _context.Parts.CountAsync();
             var lowStockParts = await _context.Parts.CountAsync(p => p.Status == PartStockStatus.LowStock || p.Status == PartStockStatus.OutOfStock);
 
+            // Financial KPIs from database
+            var totalCollected = await _context.Payments.SumAsync(p => (decimal?)p.Amount) ?? 0m;
+            var generalExpenses = await _context.Expenses.Where(e => !e.IsVoided).SumAsync(e => (decimal?)e.Amount) ?? 0m;
+            var payrollSalaryPaid = await _context.PayrollTransactions
+                .Where(pt => pt.Type == "SALARY_PAYMENT")
+                .SumAsync(pt => (decimal?)Math.Abs(pt.Amount)) ?? 0m;
+            var operatingExpenses = generalExpenses + payrollSalaryPaid;
+
+            var supplierPurchasesTotal = await _context.SupplierPurchases.SumAsync(sp => (decimal?)sp.TotalAmount) ?? 0m;
+            var totalOutflow = operatingExpenses + supplierPurchasesTotal;
+
+            var totalInvoices = await _context.Invoices.CountAsync();
+            var unpaidInvoicesAmount = await _context.Invoices
+                .Where(i => i.PaymentStatus != PaymentStatus.Paid)
+                .SumAsync(i => (decimal?)(i.GrandTotal - i.PaidAmount)) ?? 0m;
+
+            var supplierPaid = await _context.SupplierPayments.SumAsync(sp => (decimal?)sp.Amount) ?? 0m;
+            var supplierOutstandingBalance = Math.Max(0m, supplierPurchasesTotal - supplierPaid);
+
+            var totalEarnings = await _context.PayrollTransactions
+                .Where(pt => pt.Type == "DAILY_EARNING" || pt.Type == "TECHNICIAN_TIP")
+                .SumAsync(pt => (decimal?)pt.Amount) ?? 0m;
+            var totalDeductions = await _context.PayrollTransactions
+                .Where(pt => pt.Type == "DEDUCTION" || pt.Type == "ADVANCE_REPAYMENT")
+                .SumAsync(pt => (decimal?)pt.Amount) ?? 0m;
+            var technicianSalaryBalance = Math.Max(0m, totalEarnings - totalDeductions - payrollSalaryPaid);
+
             return new OwnerDashboardDto
             {
                 TotalJobOrders = totalJO,
                 OpenJobOrders = openJO,
                 CompletedJobOrders = completedJO,
                 TotalParts = totalParts,
-                LowStockParts = lowStockParts
+                LowStockParts = lowStockParts,
+
+                TotalCollected = Math.Round(totalCollected, 2),
+                OperatingExpenses = Math.Round(operatingExpenses, 2),
+                SupplierPurchasesTotal = Math.Round(supplierPurchasesTotal, 2),
+                TotalOutflow = Math.Round(totalOutflow, 2),
+                TotalInvoices = totalInvoices,
+                UnpaidInvoicesAmount = Math.Round(unpaidInvoicesAmount, 2),
+                SupplierOutstandingBalance = Math.Round(supplierOutstandingBalance, 2),
+                TechnicianSalaryBalance = Math.Round(technicianSalaryBalance, 2),
             };
         }
 
@@ -122,6 +160,48 @@ namespace StarAutoCenter.Services.Owner
             };
         }
 
+        public async Task<UserDto> UpdateUserAsync(string userId, UpdateUserDto dto)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+                throw new InvalidOperationException("User not found");
+
+            user.FullName = dto.Name;
+            user.Phone = dto.Phone;
+            user.Email = dto.Email;
+            user.UserName = dto.Email;
+
+            if (Enum.TryParse<UserRole>(dto.Role, true, out var role))
+            {
+                if (user.Role != role)
+                {
+                    var currentRoles = await _userManager.GetRolesAsync(user);
+                    if (currentRoles.Any())
+                    {
+                        await _userManager.RemoveFromRolesAsync(user, currentRoles);
+                    }
+                    user.Role = role;
+                    await _userManager.AddToRoleAsync(user, role.ToString());
+                }
+            }
+
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
+
+            return new UserDto
+            {
+                Id = user.Id,
+                Name = user.FullName,
+                Phone = user.Phone,
+                Email = user.Email!,
+                Role = user.Role.ToString(),
+                Status = user.IsActive ? "Active" : "Disabled",
+                LastActivity = user.LastActivity.ToString("dd MMM yyyy, HH:mm"),
+                Created = user.CreatedAt.ToString("dd MMM yyyy")
+            };
+        }
+
         public async Task<bool> ToggleUserStatusAsync(string userId)
         {
             var user = await _userManager.FindByIdAsync(userId);
@@ -132,24 +212,44 @@ namespace StarAutoCenter.Services.Owner
             return true;
         }
 
+        public async Task<bool> ChangePasswordAsync(string userId, string newPassword)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return false;
+
+            var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var result = await _userManager.ResetPasswordAsync(user, resetToken, newPassword);
+            return result.Succeeded;
+        }
+
         public async Task<BusinessSettingsDto> GetSettingsAsync()
         {
             var settings = await _context.BusinessSettings.FirstOrDefaultAsync();
             if (settings == null)
             {
-                settings = new BusinessSettings();
+                settings = new BusinessSettings
+                {
+                    CompanyName = "SOS Motor Works",
+                    Address = "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة",
+                    Phone = "+20 100 933 4747",
+                    Email = null,
+                    Currency = "EGP",
+                    LogoUrl = "/uploads/branding/sos_logo.jpeg",
+                    UpdatedAt = DateTime.UtcNow,
+                    UpdatedBy = "System"
+                };
                 _context.BusinessSettings.Add(settings);
                 await _context.SaveChangesAsync();
             }
 
             return new BusinessSettingsDto
             {
-                CompanyName = settings.CompanyName,
-                Address = settings.Address,
-                Phone = settings.Phone,
+                CompanyName = string.IsNullOrWhiteSpace(settings.CompanyName) ? "SOS Motor Works" : settings.CompanyName,
+                Address = string.IsNullOrWhiteSpace(settings.Address) ? "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة" : settings.Address,
+                Phone = string.IsNullOrWhiteSpace(settings.Phone) ? "+20 100 933 4747" : settings.Phone,
                 Email = settings.Email,
-                Currency = settings.Currency,
-                LogoUrl = settings.LogoUrl
+                Currency = string.IsNullOrWhiteSpace(settings.Currency) ? "EGP" : settings.Currency,
+                LogoUrl = string.IsNullOrWhiteSpace(settings.LogoUrl) ? "/uploads/branding/sos_logo.jpeg" : settings.LogoUrl
             };
         }
 

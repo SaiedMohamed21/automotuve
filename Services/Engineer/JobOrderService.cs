@@ -10,6 +10,7 @@ namespace StarAutoCenter.Services.Engineer
     {
         Task<List<JobOrderListDto>> GetAllAsync(string? search = null, string? status = null, string? sort = null);
         Task<JobOrderDetailsDto?> GetByNumberAsync(string number);
+        Task<JobOrderDetailsDto?> GetByIdAsync(int id);
         Task<JobOrderListDto> CreateAsync(CreateJobOrderDto dto);
         Task<bool> UpdateStatusAsync(string number, string status);
         Task<string> GetNextNumberAsync();
@@ -53,6 +54,7 @@ namespace StarAutoCenter.Services.Engineer
 
             return await query.Select(j => new JobOrderListDto
             {
+                Id = j.Id,
                 Number = j.Number,
                 Date = j.Date.ToString("dd MMM yyyy"),
                 Customer = j.Customer.Name,
@@ -76,6 +78,7 @@ namespace StarAutoCenter.Services.Engineer
 
             return new JobOrderDetailsDto
             {
+                Id = jo.Id,
                 Number = jo.Number,
                 Date = jo.Date.ToString("dd MMM yyyy"),
                 Status = jo.Status.ToString(),
@@ -92,6 +95,49 @@ namespace StarAutoCenter.Services.Engineer
                 CustomerRequest = jo.RequiredWork,
                 RequiredWork = jo.RequiredWork,
                 Technicians = new List<string>(), // Simplified for now
+                ApprovedItems = jo.WorkItems.Where(w => !w.IsDeferred && !w.IsRecommended).Select(w => new WorkItemDto
+                {
+                    Item = w.Item,
+                    Note = w.Note
+                }).ToList(),
+                DeferredItems = jo.WorkItems.Where(w => w.IsDeferred).Select(w => w.Item).ToList(),
+                RecommendedItems = jo.WorkItems.Where(w => w.IsRecommended).Select(w => new WorkItemDto
+                {
+                    Item = w.Item,
+                    Note = w.Note
+                }).ToList()
+            };
+        }
+
+        public async Task<JobOrderDetailsDto?> GetByIdAsync(int id)
+        {
+            var jo = await _context.JobOrders
+                .Include(j => j.Customer)
+                .Include(j => j.Vehicle)
+                .Include(j => j.WorkItems)
+                .FirstOrDefaultAsync(j => j.Id == id);
+
+            if (jo == null) return null;
+
+            return new JobOrderDetailsDto
+            {
+                Id = jo.Id,
+                Number = jo.Number,
+                Date = jo.Date.ToString("dd MMM yyyy"),
+                Status = jo.Status.ToString(),
+                Type = jo.Type,
+                CustomerId = jo.CustomerId,
+                CustomerName = jo.Customer.Name,
+                CustomerPhone = jo.Customer.Phone,
+                VehicleId = jo.VehicleId,
+                VehicleName = jo.Vehicle.Make + " " + jo.Vehicle.Model,
+                VehiclePlate = jo.Vehicle.Plate,
+                VehicleKm = jo.Km ?? jo.Vehicle.Km,
+                VehicleVin = jo.Vehicle.VIN,
+                Engineer = jo.Engineer,
+                CustomerRequest = jo.RequiredWork,
+                RequiredWork = jo.RequiredWork,
+                Technicians = new List<string>(),
                 ApprovedItems = jo.WorkItems.Where(w => !w.IsDeferred && !w.IsRecommended).Select(w => new WorkItemDto
                 {
                     Item = w.Item,
@@ -127,7 +173,7 @@ namespace StarAutoCenter.Services.Engineer
 
             _context.JobOrders.Add(jobOrder);
 
-            // Update vehicle
+            // Update existing vehicle visits and last visit date
             var vehicle = await _context.Vehicles.FindAsync(dto.VehicleId);
             if (vehicle != null)
             {
@@ -155,6 +201,7 @@ namespace StarAutoCenter.Services.Engineer
 
             return new JobOrderListDto
             {
+                Id = jobOrder.Id,
                 Number = jobOrder.Number,
                 Date = jobOrder.Date.ToString("dd MMM yyyy"),
                 Customer = customer?.Name ?? "",
@@ -186,18 +233,15 @@ namespace StarAutoCenter.Services.Engineer
             var year = DateTime.UtcNow.Year;
             var prefix = $"JO-{year}-";
 
-            var lastNumber = await _context.JobOrders
+            var existingNumbers = await _context.JobOrders
                 .Where(j => j.Number.StartsWith(prefix))
-                .OrderByDescending(j => j.Number)
                 .Select(j => j.Number)
-                .FirstOrDefaultAsync();
+                .ToListAsync();
 
             int nextSeq = 1;
-            if (lastNumber != null)
+            while (existingNumbers.Contains($"{prefix}{nextSeq:D5}"))
             {
-                var seqStr = lastNumber.Replace(prefix, "");
-                if (int.TryParse(seqStr, out var seq))
-                    nextSeq = seq + 1;
+                nextSeq++;
             }
 
             return $"{prefix}{nextSeq:D5}";

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using StarAutoCenter.Models.Enums;
 
 namespace StarAutoCenter.Models
@@ -31,6 +32,12 @@ namespace StarAutoCenter.Models
 
         [MaxLength(20)]
         public string? Location { get; set; } // Warehouse location (e.g., A-03, B-01)
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal PurchasePrice { get; set; } = 0;
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal SellingPrice { get; set; } = 0;
 
         public PartStockStatus Status { get; set; } = PartStockStatus.InStock;
 

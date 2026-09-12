@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Identity;
 using StarAutoCenter.Models;
+using StarAutoCenter.Models.Auth;
+using StarAutoCenter.Models.Enums;
 
 namespace StarAutoCenter.Data
 {
@@ -7,133 +10,82 @@ namespace StarAutoCenter.Data
         public static void Initialize(ApplicationDbContext context)
         {
             // Ensure Business Settings exist
-            if (!context.BusinessSettings.Any())
+            var settings = context.BusinessSettings.FirstOrDefault();
+            if (settings == null)
             {
                 context.BusinessSettings.Add(new BusinessSettings
                 {
-                    CompanyName = "Star Auto Center",
-                    Address = "123 Industrial Zone, Cairo, Egypt",
-                    Phone = "+20 2 1234 5678",
-                    Email = "info@starauto.com",
-                    Currency = "EGP"
+                    CompanyName = "SOS Motor Works",
+                    Address = "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة",
+                    Phone = "+20 100 933 4747",
+                    Email = null,
+                    Currency = "EGP",
+                    LogoUrl = "/uploads/branding/sos_logo.jpeg",
+                    UpdatedAt = DateTime.UtcNow,
+                    UpdatedBy = "Seed"
                 });
                 context.SaveChanges();
             }
-
-            // Seed Parts if fewer than 5 parts
-            if (context.Parts.Count() < 5)
+            else if (settings.CompanyName == "Star Auto Center" && string.IsNullOrEmpty(settings.LogoUrl))
             {
-                context.Parts.AddRange(
-                    new Part
-                    {
-                        Name = "Brake Pads Front",
-                        Number = "BP-TY-001",
-                        OEM = "04465-02220",
-                        Brand = "Brembo",
-                        Category = "Brakes",
-                        CompatibleVehicles = "[\"Toyota Camry 2018-2023\", \"Toyota Corolla 2019-2024\"]",
-                        CurrentQty = 18,
-                        MinQty = 5,
-                        Location = "Shelf A-12",
-                        Status = Models.Enums.PartStockStatus.InStock
-                    },
-                    new Part
-                    {
-                        Name = "Synthetic Engine Oil 5W-30 (4L)",
-                        Number = "OIL-5W30-4L",
-                        OEM = "08880-83389",
-                        Brand = "Mobil 1",
-                        Category = "Fluids & Oils",
-                        CompatibleVehicles = "[\"Universal / All Gasoline Engines\"]",
-                        CurrentQty = 2,
-                        MinQty = 5,
-                        Location = "Shelf B-04",
-                        Status = Models.Enums.PartStockStatus.LowStock
-                    },
-                    new Part
-                    {
-                        Name = "Oil Filter - Hyundai / Kia",
-                        Number = "OF-HK-002",
-                        OEM = "26300-35505",
-                        Brand = "Mann-Filter",
-                        Category = "Filters",
-                        CompatibleVehicles = "[\"Hyundai Elantra 2016-2023\", \"Kia Cerato 2017-2023\"]",
-                        CurrentQty = 0,
-                        MinQty = 10,
-                        Location = "Shelf A-02",
-                        Status = Models.Enums.PartStockStatus.OutOfStock
-                    },
-                    new Part
-                    {
-                        Name = "Air Filter - Nissan Sunny",
-                        Number = "AF-NS-003",
-                        OEM = "16546-ED000",
-                        Brand = "Bosch",
-                        Category = "Filters",
-                        CompatibleVehicles = "[\"Nissan Sunny 2012-2024\", \"Nissan Sentra 2014-2022\"]",
-                        CurrentQty = 12,
-                        MinQty = 4,
-                        Location = "Shelf A-05",
-                        Status = Models.Enums.PartStockStatus.InStock
-                    },
-                    new Part
-                    {
-                        Name = "Iridium Spark Plugs (Set of 4)",
-                        Number = "SP-NGK-004",
-                        OEM = "90919-01247",
-                        Brand = "NGK",
-                        Category = "Ignition",
-                        CompatibleVehicles = "[\"Toyota RAV4 2019-2024\", \"Honda Civic 2016-2023\"]",
-                        CurrentQty = 25,
-                        MinQty = 8,
-                        Location = "Shelf C-01",
-                        Status = Models.Enums.PartStockStatus.InStock
-                    },
-                    new Part
-                    {
-                        Name = "Front Shock Absorber Pair",
-                        Number = "SA-KYB-005",
-                        OEM = "4060A045",
-                        Brand = "KYB",
-                        Category = "Suspension",
-                        CompatibleVehicles = "[\"Mitsubishi Lancer EX 2008-2020\"]",
-                        CurrentQty = 1,
-                        MinQty = 3,
-                        Location = "Shelf D-08",
-                        Status = Models.Enums.PartStockStatus.LowStock
-                    }
-                );
+                // Upgrade uncustomized initial default to requested canonical configuration
+                settings.CompanyName = "SOS Motor Works";
+                settings.Phone = "+20 100 933 4747";
+                settings.Address = "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة";
+                settings.LogoUrl = "/uploads/branding/sos_logo.jpeg";
+                settings.UpdatedAt = DateTime.UtcNow;
+                settings.UpdatedBy = "Seed";
                 context.SaveChanges();
             }
+        }
 
-            // Seed initial Stock In movements if empty or orphaned
-            var validPartIds = context.Parts.Select(p => p.Id).ToHashSet();
-            var orphanedMovements = context.StockMovements.Where(m => !validPartIds.Contains(m.PartId)).ToList();
-            if (orphanedMovements.Any())
+        public static async Task SeedUsersAsync(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
+        {
+            // Ensure required roles exist
+            string[] roles = { "Engineer", "Warehouse", "Accountant", "Owner" };
+            foreach (var role in roles)
             {
-                context.StockMovements.RemoveRange(orphanedMovements);
-                context.SaveChanges();
-            }
-
-            if (!context.StockMovements.Any())
-            {
-                var allParts = context.Parts.ToList();
-                foreach (var p in allParts)
+                if (!await roleManager.RoleExistsAsync(role))
                 {
-                    if (p.CurrentQty > 0)
-                    {
-                        context.StockMovements.Add(new StockMovement
-                        {
-                            PartId = p.Id,
-                            Type = Models.Enums.StockMovementType.StockIn,
-                            Reference = p.Number,
-                            Note = "Initial Stock Added",
-                            Date = DateTime.UtcNow,
-                            Qty = p.CurrentQty
-                        });
-                    }
+                    await roleManager.CreateAsync(new IdentityRole(role));
                 }
-                context.SaveChanges();
+            }
+
+            string defaultPassword = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? "12345";
+            string ownerPassword = Environment.GetEnvironmentVariable("SEED_OWNER_PASSWORD") ?? defaultPassword;
+
+            var testAccounts = new[]
+            {
+                new { Email = "saied@owner.com", FullName = "Saied Owner", Phone = "01000000001", Role = UserRole.Owner, Password = ownerPassword },
+                new { Email = "saied@accountant.com", FullName = "Saied Accountant", Phone = "01000000002", Role = UserRole.Accountant, Password = defaultPassword },
+                new { Email = "saied@warehouse.com", FullName = "Saied Warehouse", Phone = "01000000003", Role = UserRole.Warehouse, Password = defaultPassword },
+                new { Email = "saied@engineer.com", FullName = "Saied Engineer", Phone = "01000000004", Role = UserRole.Engineer, Password = defaultPassword }
+            };
+
+            foreach (var acc in testAccounts)
+            {
+                var existing = await userManager.FindByEmailAsync(acc.Email);
+                if (existing == null)
+                {
+                    var user = new ApplicationUser
+                    {
+                        UserName = acc.Email,
+                        Email = acc.Email,
+                        FullName = acc.FullName,
+                        Phone = acc.Phone,
+                        Role = acc.Role,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    var createResult = await userManager.CreateAsync(user, acc.Password);
+                    if (!createResult.Succeeded)
+                    {
+                        throw new InvalidOperationException($"Failed to seed user '{acc.Email}': {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
+                    }
+
+                    await userManager.AddToRoleAsync(user, acc.Role.ToString());
+                }
             }
         }
     }

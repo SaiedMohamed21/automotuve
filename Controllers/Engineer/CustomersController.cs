@@ -5,6 +5,7 @@ using StarAutoCenter.Services.Engineer;
 
 namespace StarAutoCenter.Controllers.Engineer
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class CustomersController : ControllerBase

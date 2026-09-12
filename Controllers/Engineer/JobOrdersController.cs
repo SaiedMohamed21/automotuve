@@ -5,6 +5,7 @@ using StarAutoCenter.Services.Engineer;
 
 namespace StarAutoCenter.Controllers.Engineer
 {
+    [Authorize]
     [ApiController]
     [Route("api/job-orders")]
     public class JobOrdersController : ControllerBase
@@ -30,6 +31,14 @@ namespace StarAutoCenter.Controllers.Engineer
         public async Task<IActionResult> GetByNumber(string number)
         {
             var result = await _jobOrderService.GetByNumberAsync(number);
+            if (result == null) return NotFound(new { message = "Job order not found" });
+            return Ok(result);
+        }
+
+        [HttpGet("by-id/{id:int}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var result = await _jobOrderService.GetByIdAsync(id);
             if (result == null) return NotFound(new { message = "Job order not found" });
             return Ok(result);
         }

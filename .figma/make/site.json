@@ -1,5 +1,9 @@
 {
+  "title": "SOS Motor Works",
   "description": "Streamline the Engineer Job Order creation process by connecting existing screens for efficient customer and vehicle management, enhancing workflow productivity.",
+  "icons": {
+    "icon": "/uploads/branding/sos_logo.jpeg"
+  },
   "robots": {
     "index": false
   },

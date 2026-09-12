@@ -3,7 +3,8 @@ namespace StarAutoCenter.Models.Enums
     public enum JobOrderStatus
     {
         Open,
-        Completed,
+        Complete,
+        Completed = Complete,
         Closed
     }
 }

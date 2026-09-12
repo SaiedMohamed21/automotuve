@@ -54,3 +54,59 @@ body,
 #root {
   height: 100%;
 }
+
+/* ─── Print: A4 page setup ──────────────────────────────────────────────────── */
+@page {
+  size: A4 portrait;
+  margin: 12mm 14mm;
+}
+
+@media print {
+  /* Hide all application chrome */
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+
+  /* Hide fixed sidebars and navbars */
+  [data-sidebar],
+  [data-navbar],
+  [data-topbar] {
+    display: none !important;
+  }
+
+  /* Reset body for print */
+  html,
+  body {
+    background: white !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Ensure colors print correctly */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* The invoice print page */
+  .print-invoice-page {
+    display: block !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Hide print-only control buttons */
+  .print-controls {
+    display: none !important;
+  }
+}

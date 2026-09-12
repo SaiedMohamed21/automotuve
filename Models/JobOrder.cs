@@ -23,6 +23,9 @@ namespace StarAutoCenter.Models
         public string? CompletedWork { get; set; }
         public string? Notes { get; set; }
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal LaborAmount { get; set; } = 0;
+
         [MaxLength(20)]
         public string? Km { get; set; }
 
@@ -45,5 +48,7 @@ namespace StarAutoCenter.Models
         // Navigation properties
         public ICollection<IssuedPart> IssuedParts { get; set; } = new List<IssuedPart>();
         public ICollection<JobOrderWorkItem> WorkItems { get; set; } = new List<JobOrderWorkItem>();
+        public ICollection<AdditionalExpense> AdditionalExpenses { get; set; } = new List<AdditionalExpense>();
+        public Invoice? Invoice { get; set; }
     }
 }
