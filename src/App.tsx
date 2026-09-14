@@ -2599,36 +2599,40 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
 
   const s: Record<string, React.CSSProperties> = {
     page: {
-      width: "210mm",
-      minHeight: "297mm",
+      width: "100%",
+      maxWidth: "194mm",
       margin: "0 auto",
-      padding: "10mm 12mm 8mm",
+      padding: "0",
       fontFamily: "system-ui, -apple-system, 'Segoe UI', Arial, sans-serif",
       boxSizing: "border-box",
       background: "white",
       color: "#101828",
-      fontSize: "12px",
+      fontSize: "11px",
       display: "flex",
       flexDirection: "column",
+      pageBreakInside: "avoid",
+      breakInside: "avoid",
+      pageBreakAfter: "avoid",
+      breakAfter: "avoid",
     },
     header: {
       display: "flex",
       justifyContent: "space-between",
       alignItems: "flex-start",
-      borderBottom: "2.5px solid #0f2340",
-      paddingBottom: "6mm",
-      marginBottom: "5mm",
+      borderBottom: "2px solid #0f2340",
+      paddingBottom: "3mm",
+      marginBottom: "3mm",
     },
     logoBox: {
-      width: "64px",
-      height: "48px",
+      width: "60px",
+      height: "44px",
       borderRadius: "6px",
       background: "#000000",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
-      padding: "4px",
+      padding: "3px",
       flexShrink: 0,
     },
     sectionLabel: {
@@ -2637,19 +2641,19 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       color: "#6a7282",
       letterSpacing: "0.8px",
       textTransform: "uppercase" as const,
-      marginBottom: "4px",
+      marginBottom: "3px",
     },
     metaGrid: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr 1fr",
-      gap: "4mm",
-      marginBottom: "5mm",
+      gap: "3mm",
+      marginBottom: "3mm",
     },
     metaCard: {
-      background: "#f9fafb",
-      border: "1px solid #e5e7eb",
+      background: "#f8fafc",
+      border: "1px solid #d1d5dc",
       borderRadius: "6px",
-      padding: "3.5mm 4.5mm",
+      padding: "2.5mm 3.5mm",
     },
   };
 
@@ -2657,7 +2661,7 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
     <div style={s.page} className="print-job-order-page">
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div style={s.header}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={s.logoBox}>
             <img
               src={logoSrc}
@@ -2674,16 +2678,16 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
             />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: "20px", color: "#0f2340", lineHeight: "1.2" }}>{companyName}</div>
-            {phone && <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>{phone}</div>}
-            {address && <div style={{ fontSize: "10px", color: "#6a7282", marginTop: "2px", maxWidth: "110mm", lineHeight: "1.3" }} dir="rtl">{address}</div>}
+            <div style={{ fontWeight: 700, fontSize: "18px", color: "#0f2340", lineHeight: "1.2" }}>{companyName}</div>
+            {phone && <div style={{ fontSize: "10px", color: "#364153", marginTop: "1px" }}>{phone}</div>}
+            {address && <div style={{ fontSize: "9px", color: "#6a7282", marginTop: "1px", maxWidth: "110mm", lineHeight: "1.2" }} dir="rtl">{address}</div>}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: "24px", fontWeight: 700, color: "#0f2340", lineHeight: "1" }}>JOB ORDER</div>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: "#2563eb", marginTop: "4px" }}>{detail.number}</div>
-          <div style={{ fontSize: "11px", color: "#6a7282", marginTop: "2px" }}>Date: {detail.date}</div>
-          <div style={{ fontSize: "11px", fontWeight: 600, color: detail.status === "Open" ? "#2563eb" : detail.status === "Complete" ? "#16a34a" : "#6b7280", marginTop: "2px" }}>
+          <div style={{ fontSize: "20px", fontWeight: 700, color: "#0f2340", lineHeight: "1" }}>JOB ORDER</div>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "#2563eb", marginTop: "3px" }}>{detail.number}</div>
+          <div style={{ fontSize: "10px", color: "#6a7282", marginTop: "1px" }}>Date: {detail.date}</div>
+          <div style={{ fontSize: "10px", fontWeight: 600, color: detail.status === "Open" ? "#2563eb" : detail.status === "Complete" ? "#16a34a" : "#6b7280", marginTop: "1px" }}>
             Status: {detail.status}
           </div>
         </div>
@@ -2694,30 +2698,30 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
         {/* Customer Details */}
         <div style={s.metaCard}>
           <div style={s.sectionLabel}>Customer Information</div>
-          <div style={{ fontWeight: 700, fontSize: "13px", color: "#101828" }}>{detail.customerName}</div>
-          <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>Phone: {detail.customerPhone}</div>
-          {detail.customerId && <div style={{ fontSize: "10px", color: "#6a7282", marginTop: "2px" }}>ID: {detail.customerId}</div>}
+          <div style={{ fontWeight: 700, fontSize: "12px", color: "#101828" }}>{detail.customerName}</div>
+          <div style={{ fontSize: "10px", color: "#364153", marginTop: "1px" }}>Phone: {detail.customerPhone}</div>
+          {detail.customerId && <div style={{ fontSize: "9px", color: "#6a7282", marginTop: "1px" }}>ID: {detail.customerId}</div>}
         </div>
 
         {/* Vehicle Details */}
         <div style={s.metaCard}>
           <div style={s.sectionLabel}>Vehicle Information</div>
-          <div style={{ fontWeight: 700, fontSize: "13px", color: "#101828" }}>{detail.vehicleName || `${detail.vehicleMake || ""} ${detail.vehicleModel || ""}`}</div>
-          <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>
+          <div style={{ fontWeight: 700, fontSize: "12px", color: "#101828" }}>{detail.vehicleName || `${detail.vehicleMake || ""} ${detail.vehicleModel || ""}`}</div>
+          <div style={{ fontSize: "10px", color: "#364153", marginTop: "1px" }}>
             Plate: <span style={{ fontWeight: 600 }}>{detail.vehiclePlate}</span>
           </div>
-          {detail.vehicleVin && <div style={{ fontSize: "10px", color: "#475569", marginTop: "1px" }}>VIN: {detail.vehicleVin}</div>}
-          {detail.vehicleKm && <div style={{ fontSize: "10px", color: "#475569", marginTop: "1px" }}>KM: {detail.vehicleKm}</div>}
-          {detail.vehicleYear && <div style={{ fontSize: "10px", color: "#475569", marginTop: "1px" }}>Year: {detail.vehicleYear}</div>}
+          {detail.vehicleVin && <div style={{ fontSize: "9px", color: "#475569", marginTop: "1px" }}>VIN: {detail.vehicleVin}</div>}
+          {detail.vehicleKm && <div style={{ fontSize: "9px", color: "#475569", marginTop: "1px" }}>KM: {detail.vehicleKm}</div>}
+          {detail.vehicleYear && <div style={{ fontSize: "9px", color: "#475569", marginTop: "1px" }}>Year: {detail.vehicleYear}</div>}
         </div>
 
         {/* Team Details */}
         <div style={s.metaCard}>
           <div style={s.sectionLabel}>Job Order Team</div>
-          <div style={{ fontSize: "11px", color: "#364153" }}>
+          <div style={{ fontSize: "10px", color: "#364153" }}>
             <span style={{ fontWeight: 600 }}>Engineer:</span> {detail.engineer || "N/A"}
           </div>
-          <div style={{ fontSize: "11px", color: "#364153", marginTop: "3px" }}>
+          <div style={{ fontSize: "10px", color: "#364153", marginTop: "2px" }}>
             <span style={{ fontWeight: 600 }}>Technicians:</span>
             <div style={{ color: techs === "No technicians assigned" ? "#64748b" : "#0f2340", fontStyle: techs === "No technicians assigned" ? "italic" : "normal", marginTop: "1px" }}>
               {techs}
@@ -2727,9 +2731,9 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       </div>
 
       {/* ── Customer Request / Notes Section ──────────────────────────── */}
-      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm", marginBottom: "4mm" }}>
+      <div style={{ background: "#f8fafc", border: "1px solid #d1d5dc", borderRadius: "6px", padding: "2.5mm 3.5mm", marginBottom: "3mm" }}>
         <div style={s.sectionLabel}>Customer Request / Initial Notes</div>
-        <div style={{ fontSize: "12px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>
+        <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.4", whiteSpace: "pre-wrap" }}>
           {customerReq}
         </div>
       </div>
@@ -2739,32 +2743,32 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
         const reqText = detail.requiredWork?.trim() || detail.customerRequest?.trim() || "";
         const compText = detail.completedWork?.trim() || "";
 
-        const reqLines = reqText ? reqText.split("\n") : [];
-        const compLines = compText ? compText.split("\n") : [];
+        const reqLines = reqText ? reqText.split("\n").filter(l => l.trim() !== "") : [];
+        const compLines = compText ? compText.split("\n").filter(l => l.trim() !== "") : [];
 
-        const totalRows = 11;
+        const totalRows = 14;
         const reqRows = Array.from({ length: totalRows }).map((_, i) => reqLines[i] || "\u00A0");
         const compRows = Array.from({ length: totalRows }).map((_, i) => compLines[i] || "\u00A0");
 
         const rowStyle: React.CSSProperties = {
-          height: "8.5mm",
-          lineHeight: "8.5mm",
-          borderBottom: "1px solid #cbd5e1",
+          height: "9.5mm",
+          lineHeight: "9.5mm",
+          borderBottom: "1px solid #94a3b8",
           fontSize: "11px",
           color: "#1e293b",
           overflow: "hidden",
           whiteSpace: "nowrap",
           textOverflow: "ellipsis",
-          paddingLeft: "2px",
-          paddingRight: "2px",
+          paddingLeft: "3mm",
+          paddingRight: "3mm",
           boxSizing: "border-box",
         };
 
         return (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4mm", marginBottom: "4mm" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3mm", marginBottom: "3mm" }}>
             {/* Left: Required Work */}
-            <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2mm", paddingBottom: "2mm", borderBottom: "1.5px solid #0f2340" }}>
+            <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "8px", padding: "3mm 2mm 1mm 2mm", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2mm", paddingBottom: "1.5mm", paddingLeft: "3mm", paddingRight: "3mm" }}>
                 <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Required Work</span>
                 <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المطلوب</span>
               </div>
@@ -2778,8 +2782,8 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
             </div>
 
             {/* Right: Completed Work */}
-            <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2mm", paddingBottom: "2mm", borderBottom: "1.5px solid #0f2340" }}>
+            <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "8px", padding: "3mm 2mm 1mm 2mm", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2mm", paddingBottom: "1.5mm", paddingLeft: "3mm", paddingRight: "3mm" }}>
                 <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Completed Work</span>
                 <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المنفذ</span>
               </div>
@@ -2795,24 +2799,24 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
         );
       })()}
 
-      {/* ── Approved / Work Found Items ─────────────────────────────── */}
+      {/* ── Approved / Work Found Items (If any, render compactly) ───── */}
       {detail.approvedItems && detail.approvedItems.length > 0 && (
-        <div style={{ marginBottom: "5mm" }}>
-          <div style={{ ...s.sectionLabel, marginBottom: "6px" }}>Approved Work Items</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+        <div style={{ marginBottom: "3mm" }}>
+          <div style={{ ...s.sectionLabel, marginBottom: "4px" }}>Approved Work Items</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}>
             <thead>
               <tr style={{ background: "#0f2340", color: "white" }}>
-                <th style={{ padding: "5px 8px", textAlign: "left", fontSize: "9px" }}>#</th>
-                <th style={{ padding: "5px 8px", textAlign: "left", fontSize: "9px" }}>Work Item Description</th>
-                <th style={{ padding: "5px 8px", textAlign: "left", fontSize: "9px" }}>Notes</th>
+                <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "9px" }}>#</th>
+                <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "9px" }}>Work Item Description</th>
+                <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "9px" }}>Notes</th>
               </tr>
             </thead>
             <tbody>
               {detail.approvedItems.map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "5px 8px", color: "#64748b", width: "24px" }}>{idx + 1}</td>
-                  <td style={{ padding: "5px 8px", fontWeight: 600, color: "#0f2340" }}>{item.item}</td>
-                  <td style={{ padding: "5px 8px", color: "#475569" }}>{item.note || "—"}</td>
+                  <td style={{ padding: "4px 6px", color: "#64748b", width: "20px" }}>{idx + 1}</td>
+                  <td style={{ padding: "4px 6px", fontWeight: 600, color: "#0f2340" }}>{item.item}</td>
+                  <td style={{ padding: "4px 6px", color: "#475569" }}>{item.note || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -2821,18 +2825,15 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       )}
 
       {/* ── Footer / Signatures ──────────────────────────────────────── */}
-      <div style={{ marginTop: "auto", paddingTop: "8mm", borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10mm", textAlign: "center", fontSize: "10px", color: "#64748b" }}>
+      <div style={{ marginTop: "auto", paddingTop: "4mm", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8mm", textAlign: "center", fontSize: "10px", color: "#475569" }}>
         <div>
-          <div style={{ borderBottom: "1px solid #cbd5e1", height: "12mm", marginBottom: "3px" }}></div>
-          <div>Customer Signature</div>
+          <div style={{ borderTop: "1.5px solid #475569", paddingTop: "4px" }}>Customer Signature</div>
         </div>
         <div>
-          <div style={{ borderBottom: "1px solid #cbd5e1", height: "12mm", marginBottom: "3px" }}></div>
-          <div>Engineer Signature ({detail.engineer || "Engineer"})</div>
+          <div style={{ borderTop: "1.5px solid #475569", paddingTop: "4px" }}>Engineer Signature ({detail.engineer || "Engineer"})</div>
         </div>
         <div>
-          <div style={{ borderBottom: "1px solid #cbd5e1", height: "12mm", marginBottom: "3px" }}></div>
-          <div>Workshop Supervisor</div>
+          <div style={{ borderTop: "1.5px solid #475569", paddingTop: "4px" }}>Workshop Supervisor</div>
         </div>
       </div>
     </div>
@@ -6260,7 +6261,7 @@ function WarehouseMovementsScreen({ movements, parts, onSelectPart }: { movement
 
 // ─── Warehouse: Add New Part Modal ──────────────────────────────────────────
 
-function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => void; onSave: (part: WPart) => void; isOwner?: boolean }) {
+function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => void; onSave: (part: WPart) => Promise<void> | void; isOwner?: boolean }) {
   const [name, setName] = useState("");
   const [number, setNumber] = useState("");
   const [oem, setOem] = useState("");
@@ -6273,12 +6274,23 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
   const [minStock, setMinStock] = useState("1");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function handleSave() {
-    if (!name.trim()) return;
-    const qty = parseInt(initialQty) || 0;
-    const min = parseInt(minStock) || 1;
-    const status: WPart["status"] = qty <= 0 ? "Out of Stock" : qty <= min ? "Low Stock" : "In Stock";
+  async function handleSave() {
+    setError(null);
+    if (!name.trim()) {
+      setError("Part Name is required.");
+      return;
+    }
+    const qty = parseInt(initialQty);
+    if (isNaN(qty) || qty < 0) {
+      setError("Initial Quantity cannot be negative.");
+      return;
+    }
+    const min = parseInt(minStock);
+    const validMin = isNaN(min) || min < 0 ? 0 : min;
+    const status: WPart["status"] = qty <= 0 ? "Out of Stock" : qty <= validMin ? "Low Stock" : "In Stock";
     const sell = isOwner ? (parseFloat(sellingPrice) || 0) : 0;
     const buy = isOwner ? (parseFloat(purchasePrice) || 0) : 0;
     const newPart: WPart = {
@@ -6290,15 +6302,29 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
       category: category.trim() || "Other",
       compatibleVehicles: make ? [`${make} ${model}`.trim()] : ["Universal"],
       currentQty: qty,
-      minQty: min,
+      minQty: validMin,
       location: "TBD",
       status,
       purchasePrice: buy,
       sellingPrice: sell,
       partType,
     };
-    onSave(newPart);
-    onClose();
+    setSaving(true);
+    try {
+      await onSave(newPart);
+      onClose();
+    } catch (err: any) {
+      let msg = "Failed to create part.";
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed?.message) msg = parsed.message;
+      } catch {
+        if (err.message && !err.message.includes("status")) msg = err.message;
+      }
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const labelCls = "font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase";
@@ -6312,11 +6338,18 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
           <button onClick={onClose} className="text-[#6a7282] hover:text-[#111827] text-[22px] leading-none">×</button>
         </div>
 
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4 max-h-[75vh] overflow-y-auto">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-[13px] font-semibold p-3 rounded-lg flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Part Name */}
           <div>
             <label className={labelCls}>Part Name <span className="text-red-500">*</span></label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Turbocharger BMW 320i" className={`${inputCls} mt-1`} />
+            <input value={name} onChange={(e) => { setName(e.target.value); setError(null); }} placeholder="e.g. Turbocharger BMW 320i" className={`${inputCls} mt-1`} />
           </div>
 
           {/* Part Type + Brand */}
@@ -6359,7 +6392,7 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
             {isOwner && (
               <div>
                 <label className={labelCls}>Selling Price (EGP) <span className="text-red-500">*</span></label>
-                <input type="number" min="0" value={sellingPrice} onChange={(e) => setSellingPrice(e.target.value)} placeholder="e.g. 2800" className={`${inputCls} mt-1`} />
+                <input type="number" min="0" step="any" value={sellingPrice} onChange={(e) => setSellingPrice(e.target.value)} placeholder="e.g. 2800" className={`${inputCls} mt-1`} />
               </div>
             )}
           </div>
@@ -6380,11 +6413,22 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Minimum Stock</label>
-              <input type="number" min="1" value={minStock} onChange={(e) => setMinStock(e.target.value)} placeholder="1" className={`${inputCls} mt-1`} />
+              <input type="number" min="0" step="1" value={minStock} onChange={(e) => setMinStock(e.target.value)} placeholder="1" className={`${inputCls} mt-1`} />
             </div>
             <div>
-              <label className={labelCls}>Initial Quantity</label>
-              <input type="number" min="0" value={initialQty} onChange={(e) => setInitialQty(e.target.value)} placeholder="0" className={`${inputCls} mt-1`} />
+              <label className={labelCls}>Initial Quantity <span className="text-red-500">*</span></label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={initialQty}
+                onChange={(e) => {
+                  setInitialQty(e.target.value);
+                  setError(null);
+                }}
+                placeholder="0"
+                className={`${inputCls} mt-1`}
+              />
             </div>
           </div>
 
@@ -6400,12 +6444,12 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
         <div className="flex gap-3 px-6 py-4 border-t border-[#e5e7eb]">
           <button
             onClick={handleSave}
-            disabled={!name.trim()}
-            className={`flex-1 py-2.5 rounded-lg font-['Inter:Medium',sans-serif] font-medium text-[14px] transition-colors ${name.trim() ? "bg-[#0f2340] text-white hover:bg-[#1a3560]" : "bg-[#d1d5dc] text-[#6a7282] cursor-not-allowed"}`}
+            disabled={!name.trim() || saving}
+            className={`flex-1 py-2.5 rounded-lg font-['Inter:Medium',sans-serif] font-medium text-[14px] transition-colors ${name.trim() && !saving ? "bg-[#0f2340] text-white hover:bg-[#1a3560]" : "bg-[#d1d5dc] text-[#6a7282] cursor-not-allowed"}`}
           >
-            Save Part
+            {saving ? "Saving..." : "Save Part"}
           </button>
-          <button onClick={onClose} className="px-5 py-2.5 border border-[#e5e7eb] rounded-lg font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#364153] hover:bg-[#f9fafb] transition-colors">
+          <button onClick={onClose} disabled={saving} className="px-5 py-2.5 border border-[#e5e7eb] rounded-lg font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#364153] hover:bg-[#f9fafb] transition-colors">
             Cancel
           </button>
         </div>
@@ -14626,34 +14670,33 @@ export default function App() {
   }
 
   async function handleWAddNewPart(part: WPart) {
+    if (part.currentQty < 0) {
+      throw new Error("Initial Quantity cannot be negative.");
+    }
+    const payload: any = {
+      name: part.name,
+      number: part.number,
+      oem: part.oem || null,
+      brand: part.brand,
+      category: part.category,
+      currentQty: part.currentQty,
+      minQty: part.minQty,
+      location: part.location || null,
+      compatibleVehicles: part.compatibleVehicles,
+    };
+    if (isOwnerRole) {
+      payload.purchasePrice = part.purchasePrice;
+      payload.sellingPrice = part.sellingPrice;
+    }
+    const res = await api.createPart(payload);
     let savedPart: WPart = part;
-    try {
-      const payload: any = {
-        name: part.name,
-        number: part.number,
-        oem: part.oem || null,
-        brand: part.brand,
-        category: part.category,
-        currentQty: part.currentQty,
-        minQty: part.minQty,
-        location: part.location || null,
-        compatibleVehicles: part.compatibleVehicles,
+    if (res && res.id) {
+      savedPart = {
+        ...part,
+        id: res.id.toString(),
+        purchasePrice: isOwnerRole ? part.purchasePrice : 0,
+        sellingPrice: isOwnerRole ? part.sellingPrice : 0,
       };
-      if (isOwnerRole) {
-        payload.purchasePrice = part.purchasePrice;
-        payload.sellingPrice = part.sellingPrice;
-      }
-      const res = await api.createPart(payload);
-      if (res && res.id) {
-        savedPart = {
-          ...part,
-          id: res.id.toString(),
-          purchasePrice: isOwnerRole ? part.purchasePrice : 0,
-          sellingPrice: isOwnerRole ? part.sellingPrice : 0,
-        };
-      }
-    } catch (err) {
-      console.warn("Could not save part to backend API, saving locally:", err);
     }
     setWParts((prev) => [...prev, savedPart]);
   }

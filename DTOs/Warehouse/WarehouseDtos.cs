@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace StarAutoCenter.DTOs.Warehouse
 {
     public class WarehouseDashboardDto
@@ -62,7 +64,10 @@ namespace StarAutoCenter.DTOs.Warehouse
         public string? Brand { get; set; }
         public string? Category { get; set; }
         public List<string>? CompatibleVehicles { get; set; }
+
+        [Range(0, int.MaxValue, ErrorMessage = "Initial Quantity cannot be negative.")]
         public int CurrentQty { get; set; }
+
         public int MinQty { get; set; }
         public string? Location { get; set; }
         public decimal PurchasePrice { get; set; } = 0;

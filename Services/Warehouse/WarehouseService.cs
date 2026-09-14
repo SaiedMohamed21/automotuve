@@ -187,6 +187,9 @@ namespace StarAutoCenter.Services.Warehouse
             if (string.IsNullOrWhiteSpace(dto.Name))
                 throw new ArgumentException("Part Name is required.");
 
+            if (dto.CurrentQty < 0)
+                throw new ArgumentException("Initial Quantity cannot be negative.");
+
             // Check duplicate by Part Number if provided
             if (!string.IsNullOrWhiteSpace(dto.Number))
             {

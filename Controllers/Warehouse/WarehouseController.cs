@@ -47,6 +47,17 @@ namespace StarAutoCenter.Controllers.Warehouse
         [HttpPost("parts")]
         public async Task<IActionResult> CreatePart([FromBody] CreatePartDto dto)
         {
+            if (!ModelState.IsValid)
+            {
+                var firstError = ModelState.Values.SelectMany(v => v.Errors).FirstOrDefault()?.ErrorMessage;
+                return BadRequest(new { message = firstError ?? "Invalid data provided." });
+            }
+
+            if (dto.CurrentQty < 0)
+            {
+                return BadRequest(new { message = "Initial Quantity cannot be negative." });
+            }
+
             try
             {
                 // Enforce server-side role security: Non-Owner users (e.g. Warehouse) cannot set SellingPrice or PurchasePrice
