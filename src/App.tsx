@@ -584,7 +584,6 @@ function LoginScreen({ onLoginSuccess, workshopSettings }: { onLoginSuccess: (ro
             <img
               src={logoSrc}
               alt={companyName}
-              crossOrigin="anonymous"
               className="max-h-24 w-auto object-contain drop-shadow-2xl"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
@@ -1743,6 +1742,10 @@ function Step3DetailsScreen({
               <textarea
                 value={requiredWork}
                 onChange={(e) => setRequiredWork(e.target.value)}
+                style={{
+                  backgroundImage: "repeating-linear-gradient(transparent, transparent 31px, #e2e8f0 31px, #e2e8f0 32px)",
+                  lineHeight: "32px",
+                }}
                 className="absolute inset-0 w-full h-full p-4 text-[14px] font-['Inter:Regular',sans-serif] bg-transparent outline-none resize-none text-[#364153] placeholder:text-[#d1d5dc]"
                 placeholder="Write customer complaints here..."
               />
@@ -1767,6 +1770,10 @@ function Step3DetailsScreen({
               <textarea
                 value={completedWork}
                 onChange={(e) => setCompletedWork(e.target.value)}
+                style={{
+                  backgroundImage: "repeating-linear-gradient(transparent, transparent 31px, #e2e8f0 31px, #e2e8f0 32px)",
+                  lineHeight: "32px",
+                }}
                 className="absolute inset-0 w-full h-full p-4 text-[14px] font-['Inter:Regular',sans-serif] bg-transparent outline-none resize-none text-[#364153] placeholder:text-[#d1d5dc]"
                 placeholder="Write required work and tasks to be performed..."
               />
@@ -2728,29 +2735,65 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       </div>
 
       {/* ── Required Work & Completed Work Sections ──────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4mm", marginBottom: "5mm" }}>
-        {/* Left: Required Work */}
-        <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", minHeight: "90mm", display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3mm", paddingBottom: "2mm", borderBottom: "1px solid #cbd5e1" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Required Work</span>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المطلوب</span>
-          </div>
-          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", flex: 1 }} dir="auto">
-            {detail.requiredWork?.trim() || detail.customerRequest?.trim() || ""}
-          </div>
-        </div>
+      {(() => {
+        const reqText = detail.requiredWork?.trim() || detail.customerRequest?.trim() || "";
+        const compText = detail.completedWork?.trim() || "";
 
-        {/* Right: Completed Work */}
-        <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", minHeight: "90mm", display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3mm", paddingBottom: "2mm", borderBottom: "1px solid #cbd5e1" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Completed Work</span>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المنفذ</span>
+        const reqLines = reqText ? reqText.split("\n") : [];
+        const compLines = compText ? compText.split("\n") : [];
+
+        const totalRows = 11;
+        const reqRows = Array.from({ length: totalRows }).map((_, i) => reqLines[i] || "\u00A0");
+        const compRows = Array.from({ length: totalRows }).map((_, i) => compLines[i] || "\u00A0");
+
+        const rowStyle: React.CSSProperties = {
+          height: "8.5mm",
+          lineHeight: "8.5mm",
+          borderBottom: "1px solid #cbd5e1",
+          fontSize: "11px",
+          color: "#1e293b",
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
+          paddingLeft: "2px",
+          paddingRight: "2px",
+          boxSizing: "border-box",
+        };
+
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4mm", marginBottom: "4mm" }}>
+            {/* Left: Required Work */}
+            <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2mm", paddingBottom: "2mm", borderBottom: "1.5px solid #0f2340" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Required Work</span>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المطلوب</span>
+              </div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                {reqRows.map((lineContent, idx) => (
+                  <div key={idx} style={rowStyle} dir="auto">
+                    {lineContent}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: Completed Work */}
+            <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2mm", paddingBottom: "2mm", borderBottom: "1.5px solid #0f2340" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Completed Work</span>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المنفذ</span>
+              </div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                {compRows.map((lineContent, idx) => (
+                  <div key={idx} style={rowStyle} dir="auto">
+                    {lineContent}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", flex: 1 }} dir="auto">
-            {detail.completedWork?.trim() || ""}
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ── Approved / Work Found Items ─────────────────────────────── */}
       {detail.approvedItems && detail.approvedItems.length > 0 && (
@@ -2805,7 +2848,11 @@ function PrintJobOrderScreen({
   workshopSettings?: WorkshopSettings | null;
   onClose: () => void;
 }) {
+  const hasPrintedRef = useRef(false);
+
   useEffect(() => {
+    if (hasPrintedRef.current) return;
+    hasPrintedRef.current = true;
     const timer = setTimeout(() => {
       window.print();
     }, 300);
@@ -3367,7 +3414,11 @@ function JobOrderDetailsScreen({
                       value={requiredWorkText}
                       onChange={(e) => setRequiredWorkText(e.target.value)}
                       placeholder="Enter required work items (Arabic or English)..."
-                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 min-h-[220px] text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
+                      style={{
+                        backgroundImage: "repeating-linear-gradient(transparent, transparent 31px, #e2e8f0 31px, #e2e8f0 32px)",
+                        lineHeight: "32px",
+                      }}
+                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 min-h-[250px] text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
                     />
                   </div>
 
@@ -3383,7 +3434,11 @@ function JobOrderDetailsScreen({
                       value={completedWorkText}
                       onChange={(e) => setCompletedWorkText(e.target.value)}
                       placeholder="Enter completed work items (Arabic or English)..."
-                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 min-h-[220px] text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
+                      style={{
+                        backgroundImage: "repeating-linear-gradient(transparent, transparent 31px, #e2e8f0 31px, #e2e8f0 32px)",
+                        lineHeight: "32px",
+                      }}
+                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 min-h-[250px] text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
                     />
                   </div>
                 </div>
@@ -4377,7 +4432,6 @@ function JobOrderDetailsScreen({
                       <img
                         src={workshopSettings.logoUrl.startsWith("http") ? workshopSettings.logoUrl : `${API_ORIGIN}${workshopSettings.logoUrl}`}
                         alt={workshopSettings.companyName || "Workshop Logo"}
-                        crossOrigin="anonymous"
                         className="w-full h-full object-contain"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
