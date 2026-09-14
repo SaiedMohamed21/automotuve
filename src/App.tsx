@@ -1586,6 +1586,12 @@ function Step3DetailsScreen({
   const [notes2, setNotes2] = useState("");
   const [km, setKm] = useState(ctx.vehicle?.km ?? "");
 
+  useEffect(() => {
+    if (ctx.vehicle?.km) {
+      setKm(ctx.vehicle.km);
+    }
+  }, [ctx.vehicle?.id, ctx.vehicle?.km]);
+
   const ready = !!ctx.customer && !!ctx.vehicle;
 
   const infoFields = [
@@ -1596,7 +1602,7 @@ function Step3DetailsScreen({
     { label: "MAKE", value: ctx.vehicle?.make ?? null, mono: false },
     { label: "MODEL", value: ctx.vehicle?.model ?? null, mono: false },
     { label: "MODEL YEAR", value: ctx.vehicle?.year ?? null, mono: true },
-    { label: "CURRENT KM", value: km || ctx.vehicle?.km || null, mono: true },
+    { label: "CURRENT KM", value: km || ctx.vehicle?.km || "", mono: true },
     { label: "COLOR", value: ctx.vehicle?.color ?? null, mono: false },
     { label: "PLATE", value: ctx.vehicle?.plate ?? null, mono: true },
     { label: "VIN", value: ctx.vehicle?.vin ?? null, mono: true },
@@ -1678,7 +1684,15 @@ function Step3DetailsScreen({
                   <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#99a1af] tracking-[0.6px] uppercase mb-1">
                     {f.label}
                   </p>
-                  {f.value ? (
+                  {f.label === "CURRENT KM" ? (
+                    <input
+                      type="text"
+                      value={km}
+                      onChange={(e) => setKm(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="Enter KM..."
+                      className="w-full border border-[#0f2340]/40 rounded-lg px-2.5 py-1 text-[14px] font-['JetBrains_Mono:Medium',sans-serif] font-medium text-[#101828] bg-white focus:outline-none focus:ring-2 focus:ring-[#0f2340]/30 shadow-xs"
+                    />
+                  ) : f.value ? (
                     <p
                       className={`text-[14px] font-medium leading-5 text-[#101828] ${f.mono ? "font-['JetBrains_Mono:Medium',sans-serif]" : "font-['Inter:Medium',sans-serif]"}`}
                     >
@@ -1699,17 +1713,12 @@ function Step3DetailsScreen({
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d={svgPaths.p2ab43940} stroke="#99A1AF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.33333" />
             </svg>
-            <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#1e2939]">Notes</span>
-            <div className="flex-1 flex justify-end">
-              <span className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#d1d5dc]">
-                Additional instructions, special requests…
-              </span>
-            </div>
+            <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#1e2939]">Customer Request / Initial Notes</span>
           </div>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full p-5 min-h-[200px] text-[14px] font-['Inter:Regular',sans-serif] bg-transparent outline-none resize-none text-[#364153] placeholder:text-[#d1d5dc]"
+            className="w-full p-5 min-h-[140px] text-[14px] font-['Inter:Regular',sans-serif] bg-transparent outline-none resize-y text-[#364153] placeholder:text-[#d1d5dc]"
             placeholder="Add notes here..."
           />
         </div>
@@ -1721,7 +1730,7 @@ function Step3DetailsScreen({
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#f3f4f6]">
               <div>
                 <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#1e2939]">Required Work</p>
-                <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#99a1af]" dir="auto">إلي في العربية</p>
+                <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#99a1af]" dir="rtl">العمل المطلوب</p>
               </div>
               <span className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#d1d5dc]">Write freely</span>
             </div>
@@ -2021,14 +2030,16 @@ function VehicleListScreen({
   const [search, setSearch] = useState("");
 
   const filtered = vehicles.filter((v) => {
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     return (
       !q ||
       v.make.toLowerCase().includes(q) ||
       v.model.toLowerCase().includes(q) ||
       v.plate.toLowerCase().includes(q) ||
-      v.vin.toLowerCase().includes(q) ||
-      v.customerName.toLowerCase().includes(q)
+      (v.vin && v.vin.toLowerCase().includes(q)) ||
+      (v.customerName && v.customerName.toLowerCase().includes(q)) ||
+      (v.customerPhone && v.customerPhone.toLowerCase().includes(q)) ||
+      v.id.toString() === q
     );
   });
 
@@ -2719,24 +2730,24 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       {/* ── Required Work & Completed Work Sections ──────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4mm", marginBottom: "5mm" }}>
         {/* Left: Required Work */}
-        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={s.sectionLabel}>Required Work</span>
-            <span style={{ fontSize: "9px", fontWeight: 600, color: "#6a7282" }} dir="rtl">العمل المطلوب</span>
+        <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", minHeight: "90mm", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3mm", paddingBottom: "2mm", borderBottom: "1px solid #cbd5e1" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Required Work</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المطلوب</span>
           </div>
-          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", minHeight: "18mm" }} dir="auto">
-            {detail.requiredWork?.trim() || detail.customerRequest?.trim() || "No required work recorded."}
+          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", flex: 1 }} dir="auto">
+            {detail.requiredWork?.trim() || detail.customerRequest?.trim() || ""}
           </div>
         </div>
 
         {/* Right: Completed Work */}
-        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={s.sectionLabel}>Completed Work</span>
-            <span style={{ fontSize: "9px", fontWeight: 600, color: "#6a7282" }} dir="rtl">العمل المنفذ</span>
+        <div style={{ background: "#ffffff", border: "1.5px solid #0f2340", borderRadius: "6px", padding: "4mm 5mm", minHeight: "90mm", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3mm", paddingBottom: "2mm", borderBottom: "1px solid #cbd5e1" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340", letterSpacing: "0.5px", textTransform: "uppercase" }}>Completed Work</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#0f2340" }} dir="rtl">العمل المنفذ</span>
           </div>
-          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", minHeight: "18mm" }} dir="auto">
-            {detail.completedWork?.trim() || "No completed work recorded."}
+          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", flex: 1 }} dir="auto">
+            {detail.completedWork?.trim() || ""}
           </div>
         </div>
       </div>
@@ -2851,6 +2862,7 @@ function JobOrderDetailsScreen({
   parts = [],
   onCreateInvoice,
   workshopSettings,
+  onPrintJobOrder,
 }: {
   joDetail: JoDetail;
   onBack: () => void;
@@ -2862,38 +2874,11 @@ function JobOrderDetailsScreen({
   parts?: WPart[];
   onCreateInvoice?: (laborItems: LaborItem[], expenses: AdditionalExpense[]) => void;
   workshopSettings?: WorkshopSettings | null;
+  onPrintJobOrder?: (detail: JoDetail) => void;
 }) {
   const isAccountant = role === "accountant";
   const isComplete = joDetail.status === "Complete";
   const isClosed = joDetail.status === "Closed";
-
-  // Print state
-  const [showPrintJO, setShowPrintJO] = useState(false);
-
-  if (showPrintJO) {
-    return (
-      <div className="ml-56 mt-14 bg-[#e5e7eb] p-6 min-h-screen print:ml-0 print:mt-0 print:bg-white print:p-0 print:min-h-0">
-        <div className="no-print flex items-center justify-between gap-3 mb-5 max-w-[210mm] mx-auto">
-          <button
-            onClick={() => setShowPrintJO(false)}
-            className="border border-[#d1d5dc] bg-white text-[#364153] font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#f9fafb] transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
-          >
-            ← Back to Job Order Details
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
-            </svg>
-            Print / Save PDF
-          </button>
-        </div>
-        <PrintJobOrderView detail={joDetail} settings={workshopSettings} />
-      </div>
-    );
-  }
 
   // Copy as Image state
   const shareCardRef = useRef<HTMLDivElement>(null);
@@ -3241,7 +3226,7 @@ function JobOrderDetailsScreen({
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => setShowPrintJO(true)}
+            onClick={() => (onPrintJobOrder ? onPrintJobOrder(joDetail) : window.print())}
             className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -3377,12 +3362,12 @@ function JobOrderDetailsScreen({
                       <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#6a7282]" dir="rtl">العمل المطلوب</span>
                     </div>
                     <textarea
-                      rows={5}
+                      rows={8}
                       dir="auto"
                       value={requiredWorkText}
                       onChange={(e) => setRequiredWorkText(e.target.value)}
                       placeholder="Enter required work items (Arabic or English)..."
-                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
+                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 min-h-[220px] text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
                     />
                   </div>
 
@@ -3393,12 +3378,12 @@ function JobOrderDetailsScreen({
                       <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#6a7282]" dir="rtl">العمل المنفذ</span>
                     </div>
                     <textarea
-                      rows={5}
+                      rows={8}
                       dir="auto"
                       value={completedWorkText}
                       onChange={(e) => setCompletedWorkText(e.target.value)}
                       placeholder="Enter completed work items (Arabic or English)..."
-                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
+                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 min-h-[220px] text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
                     />
                   </div>
                 </div>
@@ -4365,7 +4350,7 @@ function JobOrderDetailsScreen({
         {/* Card Footer */}
         <div className="border-t border-[#e5e7eb] px-6 py-4 flex items-center gap-3 bg-[#fafbfc]">
           <button
-            onClick={() => setShowPrintJO(true)}
+            onClick={() => (onPrintJobOrder ? onPrintJobOrder(joDetail) : window.print())}
             className="bg-white border border-[#d1d5dc] text-[#101828] font-['Inter:Medium',sans-serif] font-medium text-[14px] px-4 py-2 rounded-lg hover:bg-[#f9fafb] transition-colors cursor-pointer"
           >
             Print Job Order
@@ -14879,11 +14864,12 @@ export default function App() {
   }
 
   // Add Vehicle modal → create & attach
-  async function handleCreateVehicle(v: Vehicle) {
-    if (!ctx.customer) return;
+  async function handleCreateVehicle(v: Vehicle, targetCustomer?: Customer) {
+    const cust = targetCustomer || ctx.customer || selectedCustomer;
+    if (!cust) return;
     let savedVehicle: Vehicle = v;
     try {
-      const custIdNum = parseInt(ctx.customer.id, 10);
+      const custIdNum = parseInt(cust.id, 10);
       const res = await api.createVehicle({
         make: v.make,
         model: v.model,
@@ -14905,28 +14891,31 @@ export default function App() {
           vin: vData.vin || v.vin,
           color: vData.color || v.color,
           km: vData.km || v.km,
-          customerId: ctx.customer.id,
-          visits: 0,
-          lastVisit: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+          customerId: cust.id,
+          visits: vData.visits ?? 0,
+          lastVisit: vData.lastVisit || new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
         };
       }
     } catch (err) {
       console.warn("Could not save vehicle to backend API, using local fallback:", err);
     }
 
-    const vEntry = {
+    const vEntry: VehicleListEntry = {
       ...savedVehicle,
-      customerName: ctx.customer.name,
-      customerPhone: ctx.customer.phone,
+      customerName: cust.name,
+      customerPhone: cust.phone,
     };
-    setVehicleList((prev) => [vEntry, ...prev]);
+    setVehicleList((prev) => [vEntry, ...prev.filter((item) => item.id !== savedVehicle.id)]);
     setVehicleMap((prev) => ({
       ...prev,
-      [ctx.customer!.id]: [...(prev[ctx.customer!.id] ?? []), savedVehicle],
+      [cust.id]: [...(prev[cust.id] ?? []).filter((item) => item.id !== savedVehicle.id), savedVehicle],
     }));
-    setCtx((prev) => ({ ...prev, vehicle: savedVehicle }));
+
+    if (screen === "step2-vehicle" || screen === "step1-customer") {
+      setCtx((prev) => ({ ...prev, vehicle: savedVehicle }));
+      setScreen("step3-details");
+    }
     setModal(null);
-    setScreen("step3-details");
   }
 
   // Step 3 → create job order
@@ -16087,6 +16076,10 @@ export default function App() {
           partsPriceMap={Object.fromEntries(wParts.map((p) => [p.id, p.sellingPrice]))}
           parts={wParts}
           workshopSettings={workshopSettings}
+          onPrintJobOrder={(detail) => {
+            setPrintJoDetail(detail);
+            setScreen("print-job-order");
+          }}
           onCreateInvoice={(laborItems, expenses) => {
             const partsForJob = wJobPartsMap[selectedJobOrder.number] ?? [];
             const priceMap = Object.fromEntries(wParts.map((p) => [p.id, p.sellingPrice]));
@@ -16624,16 +16617,8 @@ export default function App() {
         <AddVehicleModal
           onClose={() => setModal(null)}
           onCreate={(v) => {
-            if (screen === "customer-details" && selectedCustomer) {
-              // Add vehicle to customer without starting a job order
-              setVehicleMap((prev) => ({
-                ...prev,
-                [selectedCustomer.id]: [...(prev[selectedCustomer.id] ?? []), v],
-              }));
-              setModal(null);
-            } else {
-              handleCreateVehicle(v);
-            }
+            const targetCust = (screen === "customer-details" && selectedCustomer) ? selectedCustomer : undefined;
+            handleCreateVehicle(v, targetCust);
           }}
         />
       )}

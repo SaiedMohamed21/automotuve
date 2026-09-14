@@ -30,13 +30,15 @@ namespace StarAutoCenter.Services.Engineer
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                var s = search.ToLower();
+                var s = search.Trim().ToLower();
                 query = query.Where(v =>
                     v.Make.ToLower().Contains(s) ||
                     v.Model.ToLower().Contains(s) ||
                     v.Plate.ToLower().Contains(s) ||
                     (v.VIN != null && v.VIN.ToLower().Contains(s)) ||
-                    v.Customer.Name.ToLower().Contains(s));
+                    (v.Customer != null && v.Customer.Name.ToLower().Contains(s)) ||
+                    (v.Customer != null && v.Customer.Phone.ToLower().Contains(s)) ||
+                    v.Id.ToString() == s);
             }
 
             return await query.Select(v => new VehicleDto
@@ -52,8 +54,8 @@ namespace StarAutoCenter.Services.Engineer
                 Visits = v.Visits,
                 LastVisit = v.LastVisit.HasValue ? v.LastVisit.Value.ToString("dd MMM yyyy") : null,
                 CustomerId = v.CustomerId,
-                CustomerName = v.Customer.Name,
-                CustomerPhone = v.Customer.Phone
+                CustomerName = v.Customer != null ? v.Customer.Name : "",
+                CustomerPhone = v.Customer != null ? v.Customer.Phone : ""
             }).ToListAsync();
         }
 
