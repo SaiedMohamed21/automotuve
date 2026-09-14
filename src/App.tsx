@@ -6225,8 +6225,8 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
     const qty = parseInt(initialQty) || 0;
     const min = parseInt(minStock) || 1;
     const status: WPart["status"] = qty <= 0 ? "Out of Stock" : qty <= min ? "Low Stock" : "In Stock";
-    const sell = parseFloat(sellingPrice) || 0;
-    const buy = parseFloat(purchasePrice) || 0;
+    const sell = isOwner ? (parseFloat(sellingPrice) || 0) : 0;
+    const buy = isOwner ? (parseFloat(purchasePrice) || 0) : 0;
     const newPart: WPart = {
       id: `p-${Date.now()}`,
       name: name.trim(),
@@ -6296,16 +6296,18 @@ function AddNewPartModal({ onClose, onSave, isOwner = false }: { onClose: () => 
             </div>
           </div>
 
-          {/* Category + Selling Price */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Category + Selling Price (Owner only) */}
+          <div className={isOwner ? "grid grid-cols-2 gap-4" : "grid grid-cols-1"}>
             <div>
               <label className={labelCls}>Category</label>
               <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Brakes, Filters, Engine..." className={`${inputCls} mt-1`} />
             </div>
-            <div>
-              <label className={labelCls}>Selling Price (EGP) <span className="text-red-500">*</span></label>
-              <input type="number" min="0" value={sellingPrice} onChange={(e) => setSellingPrice(e.target.value)} placeholder="e.g. 2800" className={`${inputCls} mt-1`} />
-            </div>
+            {isOwner && (
+              <div>
+                <label className={labelCls}>Selling Price (EGP) <span className="text-red-500">*</span></label>
+                <input type="number" min="0" value={sellingPrice} onChange={(e) => setSellingPrice(e.target.value)} placeholder="e.g. 2800" className={`${inputCls} mt-1`} />
+              </div>
+            )}
           </div>
 
           {/* Compatible Make + Compatible Model */}
@@ -14572,7 +14574,7 @@ export default function App() {
   async function handleWAddNewPart(part: WPart) {
     let savedPart: WPart = part;
     try {
-      const res = await api.createPart({
+      const payload: any = {
         name: part.name,
         number: part.number,
         oem: part.oem || null,
@@ -14581,14 +14583,19 @@ export default function App() {
         currentQty: part.currentQty,
         minQty: part.minQty,
         location: part.location || null,
-        purchasePrice: part.purchasePrice,
-        sellingPrice: part.sellingPrice,
         compatibleVehicles: part.compatibleVehicles,
-      });
+      };
+      if (isOwnerRole) {
+        payload.purchasePrice = part.purchasePrice;
+        payload.sellingPrice = part.sellingPrice;
+      }
+      const res = await api.createPart(payload);
       if (res && res.id) {
         savedPart = {
           ...part,
           id: res.id.toString(),
+          purchasePrice: isOwnerRole ? part.purchasePrice : 0,
+          sellingPrice: isOwnerRole ? part.sellingPrice : 0,
         };
       }
     } catch (err) {

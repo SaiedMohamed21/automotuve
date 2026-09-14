@@ -49,6 +49,13 @@ namespace StarAutoCenter.Controllers.Warehouse
         {
             try
             {
+                // Enforce server-side role security: Non-Owner users (e.g. Warehouse) cannot set SellingPrice or PurchasePrice
+                if (!User.IsInRole("Owner"))
+                {
+                    dto.SellingPrice = 0;
+                    dto.PurchasePrice = 0;
+                }
+
                 var result = await _warehouseService.CreatePartAsync(dto);
                 return CreatedAtAction(nameof(GetPartDetails), new { id = result.Id }, result);
             }
