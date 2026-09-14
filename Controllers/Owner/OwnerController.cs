@@ -19,9 +19,12 @@ namespace StarAutoCenter.Controllers.Owner
 
         // ── Dashboard ──
         [HttpGet("dashboard")]
-        public async Task<IActionResult> GetDashboard()
+        public async Task<IActionResult> GetDashboard(
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] string? period = "This Month")
         {
-            var result = await _ownerService.GetDashboardAsync();
+            var result = await _ownerService.GetDashboardAsync(startDate, endDate, period);
             return Ok(result);
         }
 
@@ -95,6 +98,14 @@ namespace StarAutoCenter.Controllers.Owner
         public async Task<IActionResult> UpdateSettings([FromBody] BusinessSettingsDto dto)
         {
             var result = await _ownerService.UpdateSettingsAsync(dto);
+            return Ok(result);
+        }
+
+        // ── Reports ──
+        [HttpGet("reports")]
+        public async Task<IActionResult> GetReports()
+        {
+            var result = await _ownerService.GetReportsAsync();
             return Ok(result);
         }
     }

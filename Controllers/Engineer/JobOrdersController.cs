@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StarAutoCenter.DTOs.Engineer;
@@ -46,6 +47,15 @@ namespace StarAutoCenter.Controllers.Engineer
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateJobOrderDto dto)
         {
+            var userName = User.FindFirstValue(System.Security.Claims.ClaimTypes.Name) 
+                           ?? User.Identity?.Name 
+                           ?? User.FindFirstValue(System.Security.Claims.ClaimTypes.Email);
+
+            if (!string.IsNullOrWhiteSpace(userName))
+            {
+                dto.Engineer = userName;
+            }
+
             var result = await _jobOrderService.CreateAsync(dto);
             return CreatedAtAction(nameof(GetByNumber), new { number = result.Number }, result);
         }

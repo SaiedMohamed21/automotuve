@@ -130,7 +130,14 @@ export const api = {
   updateStockCount: (data: any) => request<any>("/warehouse/stock-count", { method: "POST", body: JSON.stringify(data) }),
 
   // Owner
-  getOwnerDashboard: () => request<any>("/owner/dashboard"),
+  getOwnerDashboard: (params?: { startDate?: string; endDate?: string; period?: string }) => {
+    const q: string[] = [];
+    if (params?.startDate) q.push(`startDate=${encodeURIComponent(params.startDate)}`);
+    if (params?.endDate) q.push(`endDate=${encodeURIComponent(params.endDate)}`);
+    if (params?.period) q.push(`period=${encodeURIComponent(params.period)}`);
+    const qs = q.length > 0 ? `?${q.join("&")}` : "";
+    return request<any>(`/owner/dashboard${qs}`);
+  },
   getOwnerReports: () => request<any>("/owner/reports"),
   getUsers: () => request<any[]>("/owner/users"),
   createUser: (data: any) => request<any>("/owner/users", { method: "POST", body: JSON.stringify(data) }),

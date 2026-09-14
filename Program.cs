@@ -28,10 +28,6 @@ if (!string.IsNullOrEmpty(port))
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
-else
-{
-    builder.WebHost.UseUrls("http://0.0.0.0:5000");
-}
 
 // ── Database ──
 builder.Services.AddDbContext<ApplicationDbContext>(options =>

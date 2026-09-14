@@ -138,12 +138,17 @@ namespace StarAutoCenter.DTOs.Engineer
         public string CustomerPhone { get; set; } = string.Empty;
         public int VehicleId { get; set; }
         public string VehicleName { get; set; } = string.Empty;
+        public string VehicleMake { get; set; } = string.Empty;
+        public string VehicleModel { get; set; } = string.Empty;
+        public string VehicleYear { get; set; } = string.Empty;
         public string VehiclePlate { get; set; } = string.Empty;
         public string? VehicleKm { get; set; }
         public string? VehicleVin { get; set; }
+        public string? VehicleColor { get; set; }
         public string? Engineer { get; set; }
         public string? CustomerRequest { get; set; }
         public string? RequiredWork { get; set; }
+        public string? Notes { get; set; }
         public List<string> Technicians { get; set; } = new();
         public List<WorkItemDto> ApprovedItems { get; set; } = new();
         public List<string> DeferredItems { get; set; } = new();

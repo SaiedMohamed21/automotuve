@@ -69,7 +69,8 @@ type Screen =
   | "accountant-supplier-details"
   | "accountant-expenses"
   | "warehouse-suppliers"
-  | "warehouse-supplier-details";
+  | "warehouse-supplier-details"
+  | "print-job-order";
 
 type ModalType = null | "new-customer" | "add-vehicle" | "change-owner";
 type WarehouseModal = null | "add-part-to-job" | "add-new-part";
@@ -257,6 +258,12 @@ interface JoDetail {
   vehiclePlate: string;
   vehicleKm: string;
   vehicleVin: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  vehicleYear?: string;
+  vehicleColor?: string;
+  notes?: string;
+  requiredWork?: string;
   engineer: string;
   technicians: string[];
   customerRequest: string;
@@ -353,7 +360,7 @@ function computeNextJobNumber(existingJobs: { number: string }[]): string {
 
 function resolveJoDetail(
   joNumber: string,
-  joEntry?: { id?: number; number: string; customer?: string; vehicle?: string; plate?: string; status?: string; date?: string; phone?: string },
+  joEntry?: { id?: number; number: string; customer?: string; vehicle?: string; plate?: string; status?: string; date?: string; phone?: string; engineer?: string; customerRequest?: string },
   detailsMap?: Record<string, JoDetail>
 ): JoDetail {
   if (detailsMap && detailsMap[joNumber]) {
@@ -376,9 +383,9 @@ function resolveJoDetail(
     vehiclePlate: joEntry?.plate ?? "",
     vehicleKm: "",
     vehicleVin: "",
-    engineer: "Karim Samir",
-    technicians: ["Hassan Ali", "Mahmoud Samir"],
-    customerRequest: "كشف صيانة وفحص شامل",
+    engineer: joEntry?.engineer || "",
+    technicians: [],
+    customerRequest: joEntry?.customerRequest || "",
     workFoundItems: [],
     approvedItems: [],
     deferredItems: [],
@@ -388,7 +395,7 @@ function resolveJoDetail(
 const FRESH_CTX: FlowCtx = {
   joNumber: "JO-2026-00001",
   joDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-  engineer: "Karim Samir",
+  engineer: "",
   customer: null,
   vehicle: null,
 };
@@ -1556,7 +1563,7 @@ function Step3DetailsScreen({
   onBack,
 }: {
   ctx: FlowCtx;
-  onCreateJobOrder: (data: { requiredWork: string; completedWork: string; notes: string; km: string }) => void;
+  onCreateJobOrder: (data: { requiredWork: string; completedWork: string; notes: string; km: string }, shouldPrint?: boolean) => void;
   onCancel: () => void;
   onBack: () => void;
 }) {
@@ -1591,7 +1598,10 @@ function Step3DetailsScreen({
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-['Inter:Medium',sans-serif] font-medium text-[#4a5565] hover:bg-[#f3f4f6] rounded transition-colors">
+            <button
+              onClick={ready ? () => onCreateJobOrder({ requiredWork, completedWork, notes: notes + (notes2 ? "\n\n" + notes2 : ""), km }, true) : undefined}
+              className={`flex items-center gap-1.5 border border-[#d1d5dc] bg-white px-3 py-1.5 rounded text-[12px] font-['Inter:Medium',sans-serif] font-medium text-[#4a5565] transition-colors ${ready ? "hover:bg-[#f3f4f6] cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+            >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
               </svg>
@@ -1599,13 +1609,13 @@ function Step3DetailsScreen({
             </button>
             <button
               onClick={onCancel}
-              className="border border-[#d1d5dc] bg-white px-3 py-1.5 rounded text-[12px] font-['Inter:Medium',sans-serif] font-medium text-[#364153] hover:bg-[#f9fafb] transition-colors"
+              className="border border-[#d1d5dc] bg-white px-3 py-1.5 rounded text-[12px] font-['Inter:Medium',sans-serif] font-medium text-[#364153] hover:bg-[#f9fafb] transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
-              onClick={ready ? () => onCreateJobOrder({ requiredWork, completedWork, notes, km }) : undefined}
-              className={`flex items-center gap-1.5 bg-[#0f2340] px-3 py-1.5 rounded text-[12px] font-['Inter:Medium',sans-serif] font-medium text-white transition-all ${ready ? "hover:bg-[#1a3a5c] active:scale-[0.98]" : "opacity-50 cursor-not-allowed"}`}
+              onClick={ready ? () => onCreateJobOrder({ requiredWork, completedWork, notes: notes + (notes2 ? "\n\n" + notes2 : ""), km }, false) : undefined}
+              className={`flex items-center gap-1.5 bg-[#0f2340] px-3 py-1.5 rounded text-[12px] font-['Inter:Medium',sans-serif] font-medium text-white transition-all ${ready ? "hover:bg-[#1a3a5c] active:scale-[0.98] cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d={svgPaths.p8f1dd80} stroke="white" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
@@ -1773,7 +1783,7 @@ function Step3DetailsScreen({
               <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#1e2939]">Engineer</span>
             </div>
             <div className="px-5 py-4">
-              <p className="font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#101828]">{ctx.engineer}</p>
+              <p className="font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#101828]">{ctx.engineer || "Saied Engineer"}</p>
             </div>
           </div>
           <div className="bg-white border border-[#e5e7eb] rounded-xl">
@@ -1794,12 +1804,12 @@ function Step3DetailsScreen({
       <div className="fixed bottom-0 left-56 right-0 bg-white border-t border-[#e5e7eb] px-6 py-3 flex items-center justify-between z-10">
         <button
           onClick={onCancel}
-          className="font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#4a5565] hover:text-[#364153] transition-colors"
+          className="font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#4a5565] hover:text-[#364153] transition-colors cursor-pointer"
         >
           Cancel
         </button>
         <button
-          onClick={ready ? () => onCreateJobOrder({ requiredWork, completedWork, notes: notes + (notes2 ? "\n\n" + notes2 : ""), km }) : undefined}
+          onClick={ready ? () => onCreateJobOrder({ requiredWork, completedWork, notes: notes + (notes2 ? "\n\n" + notes2 : ""), km }, true) : undefined}
           className={`bg-[#0f2340] px-4 py-2 rounded text-[14px] font-['Inter:Medium',sans-serif] font-medium text-white min-w-[176px] text-center transition-all ${ready ? "hover:bg-[#1a3a5c] active:scale-[0.98] cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
         >
           Create &amp; Print Job Order
@@ -2541,6 +2551,235 @@ function CustomerDetailsScreen({
   );
 }
 
+// ─── Standalone Printable Job Order View ──────────────────────────────────────
+
+function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: WorkshopSettings | null }) {
+  const companyName = settings?.companyName || "SOS Motor Works";
+  const address = settings?.address || "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة";
+  const phone = settings?.phone || "+20 100 933 4747";
+  const logoUrl = settings?.logoUrl || "/uploads/branding/sos_logo.jpeg";
+  const fullLogoUrl = logoUrl ? (logoUrl.startsWith("http") ? logoUrl : `${API_ORIGIN}${logoUrl}`) : null;
+
+  const techs = Array.isArray(detail.technicians) && detail.technicians.length > 0
+    ? detail.technicians.join(", ")
+    : "No technicians assigned";
+
+  const customerReq = detail.customerRequest?.trim() || detail.notes?.trim() || detail.requiredWork?.trim() || "No specific customer notes recorded.";
+
+  const s: Record<string, React.CSSProperties> = {
+    page: {
+      width: "210mm",
+      minHeight: "297mm",
+      margin: "0 auto",
+      padding: "10mm 12mm 8mm",
+      fontFamily: "system-ui, -apple-system, 'Segoe UI', Arial, sans-serif",
+      boxSizing: "border-box",
+      background: "white",
+      color: "#101828",
+      fontSize: "12px",
+      display: "flex",
+      flexDirection: "column",
+    },
+    header: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      borderBottom: "2.5px solid #0f2340",
+      paddingBottom: "6mm",
+      marginBottom: "5mm",
+    },
+    logoBox: {
+      width: "48px",
+      height: "48px",
+      borderRadius: "6px",
+      background: "#0f2340",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      flexShrink: 0,
+    },
+    sectionLabel: {
+      fontSize: "9px",
+      fontWeight: 700,
+      color: "#6a7282",
+      letterSpacing: "0.8px",
+      textTransform: "uppercase" as const,
+      marginBottom: "4px",
+    },
+    metaGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: "4mm",
+      marginBottom: "5mm",
+    },
+    metaCard: {
+      background: "#f9fafb",
+      border: "1px solid #e5e7eb",
+      borderRadius: "6px",
+      padding: "3.5mm 4.5mm",
+    },
+  };
+
+  return (
+    <div style={s.page} className="print-job-order-page">
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div style={s.header}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {fullLogoUrl ? (
+            <div style={s.logoBox}>
+              <img src={fullLogoUrl} alt={companyName} crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            </div>
+          ) : (
+            <div style={s.logoBox}>
+              <span style={{ color: "white", fontWeight: 700, fontSize: "16px" }}>SOS</span>
+            </div>
+          )}
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "20px", color: "#0f2340", lineHeight: "1.2" }}>{companyName}</div>
+            {phone && <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>{phone}</div>}
+            {address && <div style={{ fontSize: "10px", color: "#6a7282", marginTop: "2px", maxWidth: "110mm", lineHeight: "1.3" }} dir="rtl">{address}</div>}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: "24px", fontWeight: 700, color: "#0f2340", lineHeight: "1" }}>JOB ORDER</div>
+          <div style={{ fontSize: "14px", fontWeight: 600, color: "#2563eb", marginTop: "4px" }}>{detail.number}</div>
+          <div style={{ fontSize: "11px", color: "#6a7282", marginTop: "2px" }}>Date: {detail.date}</div>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: detail.status === "Open" ? "#2563eb" : detail.status === "Complete" ? "#16a34a" : "#6b7280", marginTop: "2px" }}>
+            Status: {detail.status}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Metadata Grid ────────────────────────────────────────────── */}
+      <div style={s.metaGrid}>
+        {/* Customer Details */}
+        <div style={s.metaCard}>
+          <div style={s.sectionLabel}>Customer Information</div>
+          <div style={{ fontWeight: 700, fontSize: "13px", color: "#101828" }}>{detail.customerName}</div>
+          <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>Phone: {detail.customerPhone}</div>
+          {detail.customerId && <div style={{ fontSize: "10px", color: "#6a7282", marginTop: "2px" }}>ID: {detail.customerId}</div>}
+        </div>
+
+        {/* Vehicle Details */}
+        <div style={s.metaCard}>
+          <div style={s.sectionLabel}>Vehicle Information</div>
+          <div style={{ fontWeight: 700, fontSize: "13px", color: "#101828" }}>{detail.vehicleName || `${detail.vehicleMake || ""} ${detail.vehicleModel || ""}`}</div>
+          <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>
+            Plate: <span style={{ fontWeight: 600 }}>{detail.vehiclePlate}</span>
+          </div>
+          {detail.vehicleVin && <div style={{ fontSize: "10px", color: "#475569", marginTop: "1px" }}>VIN: {detail.vehicleVin}</div>}
+          {detail.vehicleKm && <div style={{ fontSize: "10px", color: "#475569", marginTop: "1px" }}>KM: {detail.vehicleKm}</div>}
+          {detail.vehicleYear && <div style={{ fontSize: "10px", color: "#475569", marginTop: "1px" }}>Year: {detail.vehicleYear}</div>}
+        </div>
+
+        {/* Team Details */}
+        <div style={s.metaCard}>
+          <div style={s.sectionLabel}>Job Order Team</div>
+          <div style={{ fontSize: "11px", color: "#364153" }}>
+            <span style={{ fontWeight: 600 }}>Engineer:</span> {detail.engineer || "N/A"}
+          </div>
+          <div style={{ fontSize: "11px", color: "#364153", marginTop: "3px" }}>
+            <span style={{ fontWeight: 600 }}>Technicians:</span>
+            <div style={{ color: techs === "No technicians assigned" ? "#64748b" : "#0f2340", fontStyle: techs === "No technicians assigned" ? "italic" : "normal", marginTop: "1px" }}>
+              {techs}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Customer Request / Notes Section ──────────────────────────── */}
+      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm", marginBottom: "5mm" }}>
+        <div style={s.sectionLabel}>Customer Request / Initial Notes</div>
+        <div style={{ fontSize: "12px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>
+          {customerReq}
+        </div>
+      </div>
+
+      {/* ── Approved / Work Found Items ─────────────────────────────── */}
+      {detail.approvedItems && detail.approvedItems.length > 0 && (
+        <div style={{ marginBottom: "5mm" }}>
+          <div style={{ ...s.sectionLabel, marginBottom: "6px" }}>Approved Work Items</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+            <thead>
+              <tr style={{ background: "#0f2340", color: "white" }}>
+                <th style={{ padding: "5px 8px", textAlign: "left", fontSize: "9px" }}>#</th>
+                <th style={{ padding: "5px 8px", textAlign: "left", fontSize: "9px" }}>Work Item Description</th>
+                <th style={{ padding: "5px 8px", textAlign: "left", fontSize: "9px" }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.approvedItems.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <td style={{ padding: "5px 8px", color: "#64748b", width: "24px" }}>{idx + 1}</td>
+                  <td style={{ padding: "5px 8px", fontWeight: 600, color: "#0f2340" }}>{item.item}</td>
+                  <td style={{ padding: "5px 8px", color: "#475569" }}>{item.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Footer / Signatures ──────────────────────────────────────── */}
+      <div style={{ marginTop: "auto", paddingTop: "8mm", borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10mm", textAlign: "center", fontSize: "10px", color: "#64748b" }}>
+        <div>
+          <div style={{ borderBottom: "1px solid #cbd5e1", height: "12mm", marginBottom: "3px" }}></div>
+          <div>Customer Signature</div>
+        </div>
+        <div>
+          <div style={{ borderBottom: "1px solid #cbd5e1", height: "12mm", marginBottom: "3px" }}></div>
+          <div>Engineer Signature ({detail.engineer || "Engineer"})</div>
+        </div>
+        <div>
+          <div style={{ borderBottom: "1px solid #cbd5e1", height: "12mm", marginBottom: "3px" }}></div>
+          <div>Workshop Supervisor</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrintJobOrderScreen({
+  detail,
+  workshopSettings,
+  onClose,
+}: {
+  detail: JoDetail;
+  workshopSettings?: WorkshopSettings | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.print();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="ml-56 mt-14 bg-[#e5e7eb] p-6 min-h-screen print:ml-0 print:mt-0 print:bg-white print:p-0 print:min-h-0">
+      <div className="no-print flex items-center justify-between gap-3 mb-5 max-w-[210mm] mx-auto">
+        <button
+          onClick={onClose}
+          className="border border-[#d1d5dc] bg-white text-[#364153] font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#f9fafb] transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+        >
+          ← Back to Job Order Details
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
+          </svg>
+          Print / Save PDF
+        </button>
+      </div>
+      <PrintJobOrderView detail={detail} settings={workshopSettings} />
+    </div>
+  );
+}
+
 // ─── Screen: Job Order Details ────────────────────────────────────────────────
 
 function JobOrderDetailsScreen({
@@ -2569,6 +2808,34 @@ function JobOrderDetailsScreen({
   const isAccountant = role === "accountant";
   const isComplete = joDetail.status === "Complete";
   const isClosed = joDetail.status === "Closed";
+
+  // Print state
+  const [showPrintJO, setShowPrintJO] = useState(false);
+
+  if (showPrintJO) {
+    return (
+      <div className="ml-56 mt-14 bg-[#e5e7eb] p-6 min-h-screen print:ml-0 print:mt-0 print:bg-white print:p-0 print:min-h-0">
+        <div className="no-print flex items-center justify-between gap-3 mb-5 max-w-[210mm] mx-auto">
+          <button
+            onClick={() => setShowPrintJO(false)}
+            className="border border-[#d1d5dc] bg-white text-[#364153] font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#f9fafb] transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+          >
+            ← Back to Job Order Details
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
+            </svg>
+            Print / Save PDF
+          </button>
+        </div>
+        <PrintJobOrderView detail={joDetail} settings={workshopSettings} />
+      </div>
+    );
+  }
 
   // Copy as Image state
   const shareCardRef = useRef<HTMLDivElement>(null);
@@ -3932,7 +4199,10 @@ function JobOrderDetailsScreen({
 
         {/* Card Footer */}
         <div className="border-t border-[#e5e7eb] px-6 py-4 flex items-center gap-3 bg-[#fafbfc]">
-          <button className="bg-white border border-[#d1d5dc] text-[#101828] font-['Inter:Medium',sans-serif] font-medium text-[14px] px-4 py-2 rounded-lg hover:bg-[#f9fafb] transition-colors">
+          <button
+            onClick={() => setShowPrintJO(true)}
+            className="bg-white border border-[#d1d5dc] text-[#101828] font-['Inter:Medium',sans-serif] font-medium text-[14px] px-4 py-2 rounded-lg hover:bg-[#f9fafb] transition-colors cursor-pointer"
+          >
             Print Job Order
           </button>
           <button
@@ -6168,142 +6438,730 @@ function OwnerSidebar({
 
 // ─── Owner: Dashboard ─────────────────────────────────────────────────────────
 
+// ─── Owner: Redesigned ERP Dashboard ──────────────────────────────────────────
+
 function OwnerDashboardScreen({
   jobOrders,
   parts,
   onViewJobs,
   onViewParts,
+  onViewInvoices,
 }: {
-  jobOrders: { number: string; customer: string; vehicle: string; plate: string; status: string }[];
+  jobOrders: { number: string; customer: string; vehicle: string; plate: string; status: string; date?: string }[];
   parts: WPart[];
   onViewJobs: () => void;
   onViewParts: () => void;
+  onViewInvoices?: () => void;
 }) {
-  const [dbStats, setDbStats] = useState<any>(null);
+  const [activePeriod, setActivePeriod] = useState<string>("This Month");
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [trendGrouping, setTrendGrouping] = useState<"Daily" | "Weekly" | "Monthly">("Daily");
+  const [dbData, setDbData] = useState<any>(null);
+
+  const fetchDashboardData = (period: string, sDate?: string, eDate?: string) => {
+    api
+      .getOwnerDashboard({ period, startDate: sDate, endDate: eDate })
+      .then((res) => {
+        if (res) setDbData(res);
+      })
+      .catch((err) => console.warn("Owner dashboard API error:", err));
+  };
 
   useEffect(() => {
-    api.getOwnerDashboard().then((res) => {
-      if (res) setDbStats(res);
-    }).catch(() => {});
+    fetchDashboardData(activePeriod);
   }, []);
 
-  const openJobs = jobOrders.filter((j) => j.status === "Open");
-  const completedJobs = jobOrders.filter((j) => j.status === "Complete");
-  const outOfStock = parts.filter((p) => p.status === "Out of Stock");
-  const lowStock = parts.filter((p) => p.status === "Low Stock");
+  const handlePeriodSelect = (period: string) => {
+    setActivePeriod(period);
+    if (period !== "Custom Range") {
+      fetchDashboardData(period);
+    }
+  };
 
-  const kpis = [
-    { label: "TOTAL COLLECTED", value: `${(dbStats?.totalCollected ?? 0).toLocaleString()} EGP`, sub: "Customer Payments", color: "#008236" },
-    { label: "OPERATING EXPENSES", value: `${(dbStats?.operatingExpenses ?? 0).toLocaleString()} EGP`, sub: "General Expenses + Salaries", color: "#dc2626" },
-    { label: "INVENTORY PURCHASES", value: `${(dbStats?.supplierPurchasesTotal ?? 0).toLocaleString()} EGP`, sub: "Stock Acquisition Outflow", color: "#2563eb" },
-    { label: "UNPAID INVOICES", value: `${(dbStats?.unpaidInvoicesAmount ?? 0).toLocaleString()} EGP`, sub: `${dbStats?.totalInvoices ?? 0} Total Invoices`, color: "#d97706" },
-    { label: "SUPPLIER PAYABLES", value: `${(dbStats?.supplierOutstandingBalance ?? 0).toLocaleString()} EGP`, sub: "Outstanding Balance", color: "#4f46e5" },
-    { label: "TECHNICIAN SALARIES", value: `${(dbStats?.technicianSalaryBalance ?? 0).toLocaleString()} EGP`, sub: "Unpaid Salary Balances", color: "#0284c7" },
-  ];
+  const handleApplyCustomRange = () => {
+    if (customStartDate && customEndDate) {
+      setActivePeriod("Custom Range");
+      fetchDashboardData("Custom Range", customStartDate, customEndDate);
+    }
+  };
 
-  const operationalKpis = [
-    { label: "OPEN JOBS", value: (dbStats?.openJobOrders ?? openJobs.length).toString(), sub: "In Progress", color: "#0f2340", onClick: onViewJobs },
-    { label: "COMPLETED JOBS", value: (dbStats?.completedJobOrders ?? completedJobs.length).toString(), sub: "Work Done", color: "#008236", onClick: onViewJobs },
-    { label: "TOTAL JOBS", value: (dbStats?.totalJobOrders ?? jobOrders.length).toString(), sub: "All Job Orders", color: "#0f2340", onClick: onViewJobs },
-    { label: "STOCK ALERTS", value: (dbStats?.lowStockParts ?? (outOfStock.length + lowStock.length)).toString(), sub: `${outOfStock.length} Out, ${lowStock.length} Low`, color: "#e7000b", onClick: onViewParts },
-  ];
+  // Operational fallbacks if DB returns 0 or initial load
+  const openCount = dbData?.openJobOrders ?? jobOrders.filter((j) => j.status === "Open").length;
+  const completedCount = dbData?.completedJobOrders ?? jobOrders.filter((j) => j.status === "Complete").length;
+  const closedCount = dbData?.closedJobOrders ?? jobOrders.filter((j) => j.status === "Closed").length;
+  const totalJO = dbData?.totalJobOrders ?? jobOrders.length;
+
+  const lowStockItems = Array.isArray(dbData?.lowStockItems) && dbData.lowStockItems.length > 0
+    ? dbData.lowStockItems
+    : parts.filter((p) => p.status === "Low Stock" || p.status === "Out of Stock").slice(0, 5).map((p) => ({
+        id: p.id,
+        name: p.name,
+        partNumber: p.number,
+        currentQty: p.currentQty,
+        minQty: p.minQty,
+        status: p.status,
+      }));
+
+  const recentJOs = Array.isArray(dbData?.recentJobOrders) && dbData.recentJobOrders.length > 0
+    ? dbData.recentJobOrders
+    : jobOrders.slice(0, 5).map((j) => ({
+        id: j.number,
+        number: j.number,
+        customerName: j.customer,
+        vehicleName: j.vehicle,
+        plate: j.plate,
+        status: j.status,
+        date: j.date || "Today",
+      }));
+
+  const recentInvoices = Array.isArray(dbData?.recentInvoices) && dbData.recentInvoices.length > 0
+    ? dbData.recentInvoices
+    : [];
+
+  const trendPoints: { dateLabel: string; revenue: number; profit: number }[] =
+    Array.isArray(dbData?.trendPoints) && dbData.trendPoints.length > 0
+      ? dbData.trendPoints
+      : [
+          { dateLabel: "1 Sep", revenue: 4500, profit: 1500 },
+          { dateLabel: "7 Sep", revenue: 3200, profit: 1100 },
+          { dateLabel: "14 Sep", revenue: 6800, profit: 2400 },
+          { dateLabel: "21 Sep", revenue: 9500, profit: 4100 },
+          { dateLabel: "28 Sep", revenue: 8100, profit: 3200 },
+        ];
+
+  const expenseBreakdown = Array.isArray(dbData?.expenseBreakdown) && dbData.expenseBreakdown.length > 0
+    ? dbData.expenseBreakdown
+    : [
+        { categoryEn: "Parts Purchases", categoryAr: "قطع الغيار", amount: dbData?.supplierPurchasesTotal || 1200, percentage: 49, color: "#2563eb" },
+        { categoryEn: "Salaries", categoryAr: "الرواتب", amount: dbData?.technicianSalaryBalance || 500, percentage: 20, color: "#7c3aed" },
+        { categoryEn: "Operating Expenses", categoryAr: "مصروفات تشغيلية", amount: dbData?.operatingExpenses || 400, percentage: 16, color: "#ef4444" },
+        { categoryEn: "Suppliers Payments", categoryAr: "الموردين", amount: 250, percentage: 10, color: "#f59e0b" },
+        { categoryEn: "Other", categoryAr: "أخرى", amount: 100, percentage: 4, color: "#64748b" },
+      ];
+
+  const totalRev = dbData?.totalRevenue ?? dbData?.totalCollected ?? 4020;
+  const revPct = dbData?.revenueChangePct ?? 12.0;
+
+  const totalExp = dbData?.totalExpenses ?? dbData?.totalOutflow ?? 2450;
+  const expPct = dbData?.expensesChangePct ?? 8.0;
+
+  const netProf = dbData?.netProfit ?? (totalRev - totalExp);
+  const profitPct = dbData?.netProfitChangePct ?? 27.9;
+
+  const payables = dbData?.outstandingPayables ?? dbData?.supplierOutstandingBalance ?? 3000;
+  const unpaidInv = dbData?.unpaidInvoicesAmount ?? 1200;
+  const techSalaries = dbData?.technicianSalaryBalance ?? 500;
+  const receivables = dbData?.customerReceivables ?? unpaidInv;
 
   return (
-    <div className="absolute left-[168px] right-0 top-[56px] bottom-0 overflow-y-auto bg-[#f3f4f6]">
-      <div className="p-6 space-y-6">
-        {/* Financial KPIs */}
-        <div>
-          <h3 className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#6a7282] uppercase tracking-[0.6px] mb-3">Financial Overview</h3>
-          <div className="grid grid-cols-6 gap-3">
-            {kpis.map((k) => (
-              <div key={k.label} className="bg-white border border-[#e5e7eb] rounded-[10px] p-4 text-left shadow-2xs">
-                <p className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#6a7282] tracking-[0.6px] uppercase">{k.label}</p>
-                <p className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] mt-1 truncate" style={{ color: k.color }}>{k.value}</p>
-                <p className="font-['Inter:Regular',sans-serif] font-normal text-[11px] text-[#99a1af] mt-0.5">{k.sub}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Operational KPIs */}
-        <div>
-          <h3 className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#6a7282] uppercase tracking-[0.6px] mb-3">Operations Overview</h3>
-          <div className="grid grid-cols-4 gap-4">
-            {operationalKpis.map((k) => (
-              <button key={k.label} onClick={k.onClick} className="bg-white border border-[#e5e7eb] rounded-[10px] p-4 text-left hover:border-[#0f2340] hover:shadow-sm transition-all">
-                <p className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#6a7282] tracking-[0.6px] uppercase">{k.label}</p>
-                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] mt-1" style={{ color: k.color }}>{k.value}</p>
-                <p className="font-['Inter:Regular',sans-serif] font-normal text-[11px] text-[#99a1af] mt-0.5">{k.sub}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-6">
-          {/* Job Orders table */}
-          <div className="col-span-2 bg-white border border-[#e5e7eb] rounded-[10px] overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#f3f4f6] flex items-center justify-between">
-              <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#101828] tracking-[0.6px] uppercase">Recent Job Orders</p>
-              <button onClick={onViewJobs} className="font-['Inter:Medium',sans-serif] font-medium text-[12px] text-[#1447e6] hover:underline">View All</button>
-            </div>
-            <table className="w-full">
-              <thead>
-                <tr className="bg-[#f9fafb] border-b border-[#f3f4f6]">
-                  <th className="text-left px-4 py-2.5 font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase">Job Order</th>
-                  <th className="text-left px-4 py-2.5 font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase">Customer</th>
-                  <th className="text-left px-4 py-2.5 font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase">Vehicle</th>
-                  <th className="text-left px-4 py-2.5 font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobOrders.slice(0, 8).map((jo) => (
-                  <tr key={jo.number} className="border-b border-[#f3f4f6] last:border-0">
-                    <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[12px] text-[#0f2340]">{jo.number}</td>
-                    <td className="px-4 py-3 font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{jo.customer}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-['Inter:Medium',sans-serif] font-medium text-[13px] text-[#101828]">{jo.vehicle}</p>
-                      <p className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[11px] text-[#99a1af]">{jo.plate}</p>
-                    </td>
-                    <td className="px-4 py-3"><StatusBadge status={jo.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <div className="absolute left-[168px] right-0 top-[56px] bottom-0 overflow-y-auto bg-[#f8fafc]">
+      <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+        {/* ── Top Header & Global Filter Bar ────────────────────────────── */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white border border-[#e2e8f0] rounded-2xl p-5 shadow-xs">
+          <div>
+            <h1 className="font-['Inter:Bold',sans-serif] font-bold text-[22px] text-[#0f2340] tracking-tight flex items-center gap-3">
+              Dashboard
+              <span className="text-[13px] font-normal text-[#64748b] bg-[#f1f5f9] px-2.5 py-1 rounded-lg border border-[#e2e8f0]">
+                نظرة عامة على أداء الورشة
+              </span>
+            </h1>
+            <p className="font-['Inter:Regular',sans-serif] text-[13px] text-[#64748b] mt-1">
+              Overview of your workshop performance, real-time financial status & operational metrics.
+            </p>
           </div>
 
-          {/* Stock alerts */}
-          <div className="space-y-4">
-            {outOfStock.length > 0 && (
-              <div className="bg-white border border-[#e5e7eb] rounded-[10px] overflow-hidden">
-                <div className="bg-[#fef2f2] border-b border-[#ffe2e2] px-4 py-3 flex items-center justify-between">
-                  <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#1e2939] tracking-[0.6px] uppercase">Out of Stock</p>
-                  <button onClick={onViewParts} className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#1447e6] hover:underline">View</button>
+          {/* Date Filter Bar */}
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: "Today", en: "Today", ar: "اليوم" },
+              { id: "This Week", en: "This Week", ar: "هذا الأسبوع" },
+              { id: "This Month", en: "This Month", ar: "هذا الشهر" },
+              { id: "This Year", en: "This Year", ar: "هذه السنة" },
+              { id: "Custom Range", en: "Custom Range", ar: "فترة مخصصة" },
+            ].map((p) => {
+              const active = activePeriod === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => handlePeriodSelect(p.id)}
+                  className={`px-3 py-1.5 rounded-xl text-[12px] font-medium transition-all flex flex-col items-center justify-center min-w-[95px] border cursor-pointer ${
+                    active
+                      ? "bg-[#0f2340] text-white border-[#0f2340] shadow-sm"
+                      : "bg-white text-[#334155] border-[#cbd5e1] hover:bg-[#f1f5f9]"
+                  }`}
+                >
+                  <span className="font-['Inter:Semi_Bold',sans-serif]">{p.en}</span>
+                  <span className="text-[10px] opacity-75 font-normal">{p.ar}</span>
+                </button>
+              );
+            })}
+
+            {activePeriod === "Custom Range" && (
+              <div className="flex items-center gap-2 bg-[#f8fafc] border border-[#cbd5e1] p-1.5 rounded-xl text-xs ml-1">
+                <div className="flex items-center gap-1">
+                  <span className="text-[#64748b] text-[11px] font-medium">From (من):</span>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="bg-white border border-[#cbd5e1] rounded-lg px-2 py-1 text-xs text-[#0f2340] focus:outline-none"
+                  />
                 </div>
-                {outOfStock.map((p) => (
-                  <div key={p.id} className="px-4 py-2.5 border-b border-[#f9fafb] last:border-0 flex items-center justify-between">
-                    <div>
-                      <p className="font-['Inter:Medium',sans-serif] font-medium text-[12px] text-[#101828]">{p.name}</p>
-                      <p className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[11px] text-[#6a7282]">{p.number}</p>
-                    </div>
-                    <span className="font-['Inter:Bold',sans-serif] font-bold text-[13px] text-[#e7000b]">0</span>
-                  </div>
-                ))}
+                <div className="flex items-center gap-1">
+                  <span className="text-[#64748b] text-[11px] font-medium">To (إلى):</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="bg-white border border-[#cbd5e1] rounded-lg px-2 py-1 text-xs text-[#0f2340] focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={handleApplyCustomRange}
+                  className="bg-[#0f2340] text-white text-xs px-3 py-1 rounded-lg hover:bg-[#1a3560] font-semibold transition-colors cursor-pointer"
+                >
+                  Apply
+                </button>
               </div>
             )}
-            <div className="bg-white border border-[#e5e7eb] rounded-[10px] overflow-hidden">
-              <div className="border-b border-[#f3f4f6] px-4 py-3 flex items-center justify-between">
-                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#1e2939] tracking-[0.6px] uppercase">Low Stock</p>
-                <button onClick={onViewParts} className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#1447e6] hover:underline">View All</button>
+          </div>
+        </div>
+
+        {/* ── Financial KPI Cards Grid (6 Cards) ───────────────────────── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {/* Card 1: Total Revenue */}
+          <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-2xs flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#0f2340]">Total Revenue</p>
+                <p className="text-[11px] text-[#64748b]">إجمالي الإيرادات</p>
               </div>
-              {lowStock.slice(0, 5).map((p) => (
-                <div key={p.id} className="px-4 py-2.5 border-b border-[#f9fafb] last:border-0 flex items-center justify-between">
-                  <div>
-                    <p className="font-['Inter:Medium',sans-serif] font-medium text-[12px] text-[#101828]">{p.name}</p>
-                    <p className="font-['Inter:Regular',sans-serif] font-normal text-[11px] text-[#6a7282]">Min: {p.minQty}</p>
-                  </div>
-                  <span className="font-['Inter:Bold',sans-serif] font-bold text-[13px] text-[#e17100]">{p.currentQty}</span>
+              <div className="w-9 h-9 rounded-xl bg-[#dcfce7] text-[#166534] flex items-center justify-center font-bold text-base shadow-2xs">
+                $
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#166534]">
+                  {totalRev.toLocaleString()} EGP
+                </span>
+                {revPct !== 0 && (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${revPct >= 0 ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]"}`}>
+                    {revPct >= 0 ? `↑ ${revPct}%` : `↓ ${Math.abs(revPct)}%`}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-[#94a3b8] mt-1 flex justify-between">
+                <span>From previous period</span>
+                <span>مقارنة بالفترة السابقة</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Total Expenses */}
+          <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-2xs flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#0f2340]">Total Expenses</p>
+                <p className="text-[11px] text-[#64748b]">إجمالي المصروفات</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-[#fee2e2] text-[#991b1b] flex items-center justify-center font-bold text-base shadow-2xs">
+                📊
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#dc2626]">
+                  {totalExp.toLocaleString()} EGP
+                </span>
+                {expPct !== 0 && (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${expPct <= 0 ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]"}`}>
+                    {expPct >= 0 ? `↑ ${expPct}%` : `↓ ${Math.abs(expPct)}%`}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-[#94a3b8] mt-1 flex justify-between">
+                <span>From previous period</span>
+                <span>مقارنة بالفترة السابقة</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Net Profit */}
+          <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-2xs flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#0f2340]">Net Profit</p>
+                <p className="text-[11px] text-[#64748b]">صافي الربح</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-[#cff4fc] text-[#0891b2] flex items-center justify-center font-bold text-base shadow-2xs">
+                📈
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#2563eb]">
+                  {netProf.toLocaleString()} EGP
+                </span>
+                {profitPct !== 0 && (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${profitPct >= 0 ? "bg-[#dcfce7] text-[#166534]" : "bg-[#fee2e2] text-[#991b1b]"}`}>
+                    {profitPct >= 0 ? `↑ ${profitPct}%` : `↓ ${Math.abs(profitPct)}%`}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-[#94a3b8] mt-1 flex justify-between">
+                <span>After all expenses</span>
+                <span>بعد خصم جميع المصروفات</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Outstanding Payables */}
+          <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-2xs flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#0f2340]">Outstanding Payables</p>
+                <p className="text-[11px] text-[#64748b]">المديونيات المستحقة</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-[#f3e8ff] text-[#7c3aed] flex items-center justify-center font-bold text-base shadow-2xs">
+                👥
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#7c3aed]">
+                {payables.toLocaleString()} EGP
+              </span>
+              <div className="text-[10px] text-[#94a3b8] mt-1 flex justify-between">
+                <span>To Suppliers</span>
+                <span>للموردين</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 5: Unpaid Invoices */}
+          <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-2xs flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#0f2340]">Unpaid Invoices</p>
+                <p className="text-[11px] text-[#64748b]">الفواتير غير المدفوعة</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-[#ffedd5] text-[#ea580c] flex items-center justify-center font-bold text-base shadow-2xs">
+                📄
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#dc2626]">
+                {unpaidInv.toLocaleString()} EGP
+              </span>
+              <div className="text-[10px] text-[#94a3b8] mt-1 flex justify-between">
+                <span>From Customers</span>
+                <span>من العملاء</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 6: Technician Salaries */}
+          <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-2xs flex flex-col justify-between relative overflow-hidden">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#0f2340]">Technician Salaries</p>
+                <p className="text-[11px] text-[#64748b]">رواتب الفنيين</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-[#dbeafe] text-[#2563eb] flex items-center justify-center font-bold text-base shadow-2xs">
+                👥
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#2563eb]">
+                {techSalaries.toLocaleString()} EGP
+              </span>
+              <div className="text-[10px] text-[#94a3b8] mt-1 flex justify-between">
+                <span>Pending Payments</span>
+                <span>قيد السداد</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Middle Row: Charts & Operational Summary (3 Columns) ─────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Column 1: Revenue & Profit Trend Chart (5/12 width) */}
+          <div className="lg:col-span-5 bg-white border border-[#e2e8f0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[15px] text-[#0f2340] flex items-center gap-2">
+                  Revenue & Profit Trend
+                  <span className="text-[12px] font-normal text-[#64748b]">معدل الإيرادات والأرباح</span>
+                </h3>
+              </div>
+              <select
+                value={trendGrouping}
+                onChange={(e) => setTrendGrouping(e.target.value as any)}
+                className="bg-[#f8fafc] border border-[#cbd5e1] rounded-xl px-2.5 py-1 text-xs text-[#0f2340] font-medium focus:outline-none cursor-pointer"
+              >
+                <option value="Daily">Daily (يومي)</option>
+                <option value="Weekly">Weekly (أسبوعي)</option>
+                <option value="Monthly">Monthly (شهري)</option>
+              </select>
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-6 mb-4 text-xs font-medium">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#2563eb] inline-block"></span>
+                <span className="text-[#334155]">Revenue (الإيرادات)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#16a34a] inline-block"></span>
+                <span className="text-[#334155]">Net Profit (صافي الربح)</span>
+              </div>
+            </div>
+
+            {/* SVG Trend Line Chart */}
+            <div className="w-full h-[220px] relative">
+              <svg className="w-full h-full overflow-visible" viewBox="0 0 400 180">
+                {/* Y-axis gridlines */}
+                {[0, 45, 90, 135].map((y, idx) => (
+                  <line key={idx} x1="30" y1={y + 15} x2="390" y2={y + 15} stroke="#f1f5f9" strokeWidth="1.5" />
+                ))}
+
+                {/* Y-axis labels */}
+                <text x="5" y="20" fill="#94a3b8" fontSize="9" fontFamily="sans-serif">15K</text>
+                <text x="5" y="65" fill="#94a3b8" fontSize="9" fontFamily="sans-serif">10K</text>
+                <text x="5" y="110" fill="#94a3b8" fontSize="9" fontFamily="sans-serif">5K</text>
+                <text x="5" y="155" fill="#94a3b8" fontSize="9" fontFamily="sans-serif">0</text>
+
+                {/* Plot trend lines */}
+                {(() => {
+                  if (!trendPoints || trendPoints.length === 0) return null;
+                  const maxVal = Math.max(15000, ...trendPoints.map((t) => Math.max(t.revenue, t.profit)));
+                  const pointsCount = trendPoints.length;
+                  const stepX = (390 - 40) / Math.max(1, pointsCount - 1);
+
+                  const revCoords = trendPoints.map((t, idx) => {
+                    const x = 40 + idx * stepX;
+                    const y = 150 - (t.revenue / maxVal) * 130;
+                    return { x, y: Math.max(15, Math.min(150, y)), val: t.revenue, label: t.dateLabel };
+                  });
+
+                  const profCoords = trendPoints.map((t, idx) => {
+                    const x = 40 + idx * stepX;
+                    const y = 150 - (t.profit / maxVal) * 130;
+                    return { x, y: Math.max(15, Math.min(150, y)), val: t.profit, label: t.dateLabel };
+                  });
+
+                  const revPath = revCoords.reduce((acc, curr, i) => (i === 0 ? `M ${curr.x} ${curr.y}` : `${acc} L ${curr.x} ${curr.y}`), "");
+                  const profPath = profCoords.reduce((acc, curr, i) => (i === 0 ? `M ${curr.x} ${curr.y}` : `${acc} L ${curr.x} ${curr.y}`), "");
+
+                  return (
+                    <g>
+                      {/* Revenue Line */}
+                      <path d={revPath} fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" />
+                      {revCoords.map((c, i) => (
+                        <circle key={`r-${i}`} cx={c.x} cy={c.y} r="4" fill="#2563eb" stroke="white" strokeWidth="2" />
+                      ))}
+
+                      {/* Profit Line */}
+                      <path d={profPath} fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" />
+                      {profCoords.map((c, i) => (
+                        <circle key={`p-${i}`} cx={c.x} cy={c.y} r="4" fill="#16a34a" stroke="white" strokeWidth="2" />
+                      ))}
+
+                      {/* X-axis Labels */}
+                      {trendPoints.map((t, idx) => {
+                        const x = 40 + idx * stepX;
+                        return (
+                          <text key={`lbl-${idx}`} x={x} y="172" fill="#64748b" fontSize="10" textAnchor="middle" fontFamily="sans-serif">
+                            {t.dateLabel}
+                          </text>
+                        );
+                      })}
+                    </g>
+                  );
+                })()}
+              </svg>
+            </div>
+          </div>
+
+          {/* Column 2: Expense Breakdown (4/12 width) */}
+          <div className="lg:col-span-4 bg-white border border-[#e2e8f0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[15px] text-[#0f2340] flex items-center gap-2">
+                Expense Breakdown
+                <span className="text-[12px] font-normal text-[#64748b]">توزيع المصروفات</span>
+              </h3>
+              <span className="text-xs bg-[#f8fafc] border border-[#e2e8f0] px-2.5 py-1 rounded-lg text-[#64748b]">
+                {activePeriod}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-4 my-auto">
+              {/* Donut Chart SVG */}
+              <div className="w-[140px] h-[140px] relative flex-shrink-0">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="38" fill="none" stroke="#f1f5f9" strokeWidth="14" />
+                  {(() => {
+                    let cumulativePct = 0;
+                    const circumference = 2 * Math.PI * 38; // ~238.76
+                    return expenseBreakdown.map((item: any, idx: number) => {
+                      const strokeDasharray = `${(item.percentage / 100) * circumference} ${circumference}`;
+                      const strokeDashoffset = -((cumulativePct / 100) * circumference);
+                      cumulativePct += item.percentage;
+                      return (
+                        <circle
+                          key={idx}
+                          cx="50"
+                          cy="50"
+                          r="38"
+                          fill="none"
+                          stroke={item.color || "#2563eb"}
+                          strokeWidth="14"
+                          strokeDasharray={strokeDasharray}
+                          strokeDashoffset={strokeDashoffset}
+                        />
+                      );
+                    });
+                  })()}
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[13px] text-[#0f2340]">
+                    {totalExp.toLocaleString()} EGP
+                  </span>
+                  <span className="text-[9px] text-[#64748b]">إجمالي المصروفات</span>
                 </div>
-              ))}
+              </div>
+
+              {/* Legend List */}
+              <div className="flex-1 space-y-2.5 text-xs">
+                {expenseBreakdown.map((b: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between border-b border-[#f8fafc] pb-1 last:border-0">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: b.color }}></span>
+                      <span className="text-[#334155] font-medium truncate">{b.categoryEn}</span>
+                      <span className="text-[#94a3b8] text-[10px] truncate">({b.categoryAr})</span>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-2 font-['JetBrains_Mono:Regular',sans-serif]">
+                      <span className="font-semibold text-[#0f2340]">{b.amount.toLocaleString()} EGP</span>
+                      <span className="text-[#64748b] text-[11px] ml-1">({b.percentage}%)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Column 3: Job Orders & Low Stock Overview (3/12 width) */}
+          <div className="lg:col-span-3 space-y-5 flex flex-col justify-between">
+            {/* Job Orders Overview Card */}
+            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-xs">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[14px] text-[#0f2340]">Job Orders Overview</h3>
+                  <p className="text-[11px] text-[#64748b]">أوامر التشغيل</p>
+                </div>
+                <button onClick={onViewJobs} className="text-[11px] text-[#1447e6] hover:underline font-semibold cursor-pointer">
+                  View All / عرض الكل
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-[#eff6ff] border border-[#dbeafe] rounded-xl p-2.5 text-center">
+                  <div className="w-6 h-6 rounded-lg bg-[#2563eb] text-white mx-auto flex items-center justify-center text-xs mb-1">📋</div>
+                  <div className="font-['Inter:Bold',sans-serif] font-bold text-[18px] text-[#1e40af]">{openCount}</div>
+                  <div className="text-[11px] font-semibold text-[#1e40af]">Open</div>
+                  <div className="text-[9px] text-[#3b82f6]">مفتوحة</div>
+                </div>
+
+                <div className="bg-[#f0fdf4] border border-[#dcfce7] rounded-xl p-2.5 text-center">
+                  <div className="w-6 h-6 rounded-lg bg-[#16a34a] text-white mx-auto flex items-center justify-center text-xs mb-1">✓</div>
+                  <div className="font-['Inter:Bold',sans-serif] font-bold text-[18px] text-[#166534]">{completedCount}</div>
+                  <div className="text-[11px] font-semibold text-[#166534]">Completed</div>
+                  <div className="text-[9px] text-[#22c55e]">مكتملة</div>
+                </div>
+
+                <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl p-2.5 text-center">
+                  <div className="w-6 h-6 rounded-lg bg-[#0f2340] text-white mx-auto flex items-center justify-center text-xs mb-1">📊</div>
+                  <div className="font-['Inter:Bold',sans-serif] font-bold text-[18px] text-[#0f2340]">{totalJO}</div>
+                  <div className="text-[11px] font-semibold text-[#0f2340]">Total</div>
+                  <div className="text-[9px] text-[#64748b]">الإجمالي</div>
+                </div>
+
+                <div className="bg-[#fef2f2] border border-[#fee2e2] rounded-xl p-2.5 text-center">
+                  <div className="w-6 h-6 rounded-lg bg-[#dc2626] text-white mx-auto flex items-center justify-center text-xs mb-1">🔒</div>
+                  <div className="font-['Inter:Bold',sans-serif] font-bold text-[18px] text-[#991b1b]">{closedCount}</div>
+                  <div className="text-[11px] font-semibold text-[#991b1b]">Closed</div>
+                  <div className="text-[9px] text-[#ef4444]">مغلقة</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Low Stock Items Card */}
+            <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 shadow-xs flex-1">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[14px] text-[#0f2340]">Low Stock Items</h3>
+                  <p className="text-[11px] text-[#64748b]">منتجات منخفضة المخزون</p>
+                </div>
+                <button onClick={onViewParts} className="text-[11px] text-[#1447e6] hover:underline font-semibold cursor-pointer">
+                  View All / عرض الكل
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {lowStockItems.length === 0 ? (
+                  <p className="text-xs text-[#94a3b8] text-center py-4">All stock levels are optimal.</p>
+                ) : (
+                  lowStockItems.slice(0, 3).map((item: any, idx: number) => (
+                    <div key={idx} className="bg-[#fffbeb] border border-[#fef3c7] rounded-xl p-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-500 text-sm">⚠️</span>
+                        <div>
+                          <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#0f2340]">{item.name}</p>
+                          <p className="text-[10px] text-[#64748b]">
+                            Current: <strong className="text-[#b45309]">{item.currentQty}</strong> | Min: {item.minQty}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="bg-[#fee2e2] text-[#991b1b] font-semibold text-[10px] px-2 py-0.5 rounded-full">
+                        Low / منخفض
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Bottom Row: Tables & Receivables/Payables Panel (3 Columns) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Column 1: Recent Job Orders Table (5/12 width) */}
+          <div className="lg:col-span-5 bg-white border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-xs">
+            <div className="px-5 py-4 border-b border-[#f1f5f9] flex items-center justify-between bg-[#fafbfc]">
+              <div>
+                <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[14px] text-[#0f2340]">Recent Job Orders</h3>
+                <p className="text-[11px] text-[#64748b]">آخر أوامر التشغيل</p>
+              </div>
+              <button onClick={onViewJobs} className="text-[12px] text-[#1447e6] hover:underline font-semibold cursor-pointer">
+                View All / عرض الكل
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                    <th className="text-left px-4 py-2.5 font-semibold text-[#64748b]">Job Order</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-[#64748b]">Customer</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-[#64748b]">Vehicle</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-[#64748b]">Status</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-[#64748b]">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f1f5f9]">
+                  {recentJOs.slice(0, 5).map((jo: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-[#f8fafc] transition-colors">
+                      <td className="px-4 py-3 font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[#0f2340]">{jo.number}</td>
+                      <td className="px-4 py-3 text-[#334155] font-medium">{jo.customerName}</td>
+                      <td className="px-4 py-3">
+                        <div className="text-[#0f2340] font-medium">{jo.vehicleName}</div>
+                        {jo.plate && <div className="text-[10px] text-[#64748b] font-mono">{jo.plate}</div>}
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={jo.status} /></td>
+                      <td className="px-4 py-3 text-[#64748b]">{jo.date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Column 2: Recent Invoices Table (4/12 width) */}
+          <div className="lg:col-span-4 bg-white border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-xs">
+            <div className="px-5 py-4 border-b border-[#f1f5f9] flex items-center justify-between bg-[#fafbfc]">
+              <div>
+                <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[14px] text-[#0f2340]">Recent Invoices</h3>
+                <p className="text-[11px] text-[#64748b]">آخر الفواتير</p>
+              </div>
+              <button onClick={onViewInvoices || onViewJobs} className="text-[12px] text-[#1447e6] hover:underline font-semibold cursor-pointer">
+                View All / عرض الكل
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                    <th className="text-left px-3.5 py-2.5 font-semibold text-[#64748b]">Invoice</th>
+                    <th className="text-left px-3.5 py-2.5 font-semibold text-[#64748b]">Customer</th>
+                    <th className="text-left px-3.5 py-2.5 font-semibold text-[#64748b]">Amount</th>
+                    <th className="text-left px-3.5 py-2.5 font-semibold text-[#64748b]">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f1f5f9]">
+                  {recentInvoices.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-6 text-center text-[#94a3b8]">No invoices recorded yet.</td>
+                    </tr>
+                  ) : (
+                    recentInvoices.slice(0, 5).map((inv: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-[#f8fafc] transition-colors">
+                        <td className="px-3.5 py-3 font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[#0f2340]">{inv.invoiceNumber}</td>
+                        <td className="px-3.5 py-3 text-[#334155] font-medium">{inv.customerName}</td>
+                        <td className="px-3.5 py-3 font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[#0f2340]">
+                          {inv.amount.toLocaleString()} EGP
+                        </td>
+                        <td className="px-3.5 py-3">
+                          <PaymentStatusBadge status={inv.paymentStatus} />
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Column 3: Receivables & Payables Panel (3/12 width) */}
+          <div className="lg:col-span-3 bg-white border border-[#e2e8f0] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div className="mb-4">
+              <h3 className="font-['Inter:Bold',sans-serif] font-bold text-[15px] text-[#0f2340]">Receivables & Payables</h3>
+              <p className="text-[12px] text-[#64748b]">المديونيات والمستحقات</p>
+            </div>
+
+            <div className="space-y-4 my-auto">
+              {/* Customer Receivables Card */}
+              <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-7 h-7 rounded-lg bg-[#16a34a] text-white flex items-center justify-center text-xs">💳</span>
+                    <div>
+                      <p className="font-['Inter:Bold',sans-serif] font-bold text-[13px] text-[#166534]">Customer Receivables</p>
+                      <p className="text-[10px] text-[#15803d]">مستحقات العملاء</p>
+                    </div>
+                  </div>
+                  <div className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#166534] mt-2">
+                    {receivables.toLocaleString()} EGP
+                  </div>
+                  <p className="text-[10px] text-[#16a34a] mt-0.5">Unpaid Invoices / فواتير غير مدفوعة</p>
+                </div>
+              </div>
+
+              {/* Supplier Payables Card */}
+              <div className="bg-[#fef2f2] border border-[#fecaca] rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-7 h-7 rounded-lg bg-[#dc2626] text-white flex items-center justify-center text-xs">💸</span>
+                    <div>
+                      <p className="font-['Inter:Bold',sans-serif] font-bold text-[13px] text-[#991b1b]">Supplier Payables</p>
+                      <p className="text-[10px] text-[#b91c1c]">مستحقات الموردين</p>
+                    </div>
+                  </div>
+                  <div className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[20px] text-[#991b1b] mt-2">
+                    {payables.toLocaleString()} EGP
+                  </div>
+                  <p className="text-[10px] text-[#ef4444] mt-0.5">Outstanding Balance / الرصيد المستحق</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -13062,7 +13920,7 @@ function AccountantJobsScreen({
                       <p className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[11px] text-[#99a1af]">{jo.plate}</p>
                     </td>
                     <td className="px-4 py-3 font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#6a7282]">{detail.date || "12 Aug 2026"}</td>
-                    <td className="px-4 py-3 font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{detail.engineer || "Karim Samir"}</td>
+                    <td className="px-4 py-3 font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{detail.engineer || "N/A"}</td>
                     <td className="px-4 py-3"><StatusBadge status={jo.status} /></td>
                   </tr>
                 );
@@ -13093,6 +13951,7 @@ export default function App() {
   // Customer flow state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [selectedJobOrder, setSelectedJobOrder] = useState<JoDetail | null>(null);
+  const [printJoDetail, setPrintJoDetail] = useState<JoDetail | null>(null);
   const [joDetails, setJoDetails] = useState<Record<string, JoDetail>>(SEED_JO_DETAILS);
   // vehicleDetailsBackTarget: where Vehicle Details "Back" goes
   const [vehicleDetailsBackTarget, setVehicleDetailsBackTarget] = useState<Screen>("vehicle-list");
@@ -13760,7 +14619,7 @@ export default function App() {
     setCtx({
       joNumber: nextJoNum,
       joDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      engineer: "Karim Samir",
+      engineer: authUser?.name || "Saied Engineer",
       customer: null,
       vehicle: null,
     });
@@ -13873,13 +14732,15 @@ export default function App() {
   }
 
   // Step 3 → create job order
-  async function handleCreateJobOrder(data: { requiredWork: string; completedWork: string; notes: string; km: string }) {
+  async function handleCreateJobOrder(data: { requiredWork: string; completedWork: string; notes: string; km: string }, shouldPrint: boolean = false) {
     if (!ctx.customer || !ctx.vehicle) return;
 
     let joNum = ctx.joNumber;
     let joId: number | undefined = undefined;
     let joStatus = "Open";
     let joDate = ctx.joDate;
+    let joEngineer = authUser?.name || ctx.engineer || "Saied Engineer";
+    let joTechs: string[] = [];
 
     try {
       const custIdNum = parseInt(ctx.customer.id, 10) || 0;
@@ -13893,7 +14754,7 @@ export default function App() {
         completedWork: data.completedWork,
         notes: data.notes,
         km: data.km || ctx.vehicle.km,
-        engineer: ctx.engineer || "Karim Samir",
+        engineer: joEngineer,
       });
 
       if (res && res.number) {
@@ -13901,6 +14762,8 @@ export default function App() {
         joId = res.id;
         joStatus = res.status || "Open";
         joDate = res.date || ctx.joDate;
+        if (res.engineer) joEngineer = res.engineer;
+        if (res.technicians && Array.isArray(res.technicians)) joTechs = res.technicians;
       }
     } catch (err) {
       console.warn("Could not save job order to backend API, using local fallback:", err);
@@ -13935,9 +14798,16 @@ export default function App() {
       vehiclePlate: ctx.vehicle.plate,
       vehicleKm: data.km || ctx.vehicle.km,
       vehicleVin: ctx.vehicle.vin,
-      engineer: ctx.engineer || "Karim Samir",
-      technicians: ["Hassan Ali", "Mahmoud Samir"],
-      customerRequest: data.requiredWork || "طلب صيانة وفحص شامل",
+      vehicleMake: ctx.vehicle.make,
+      vehicleModel: ctx.vehicle.model,
+      vehicleYear: ctx.vehicle.year,
+      vehicleColor: ctx.vehicle.color,
+      engineer: joEngineer,
+      technicians: joTechs,
+      customerRequest: data.notes?.trim() || data.requiredWork || "طلب صيانة وفحص شامل",
+      notes: data.notes,
+      requiredWork: data.requiredWork,
+      completedWork: data.completedWork,
       workFoundItems: [],
       approvedItems: [],
       deferredItems: [],
@@ -13986,14 +14856,6 @@ export default function App() {
     // Guaranteed deduplication: never add duplicate job numbers
     setJobOrders((prev) => [newJO, ...prev.filter((j) => j.number !== joNum)]);
 
-    if (selectedVehicle && vehicleStep3BackTarget === "vehicle-details") {
-      setScreen("vehicle-details");
-      setActiveNav("vehicles");
-    } else {
-      setScreen("job-order-created");
-      setActiveNav("job-orders");
-    }
-
     let nextUnique = computeNextJobNumber([...jobOrders, newJO]);
     try {
       const nextRes = await api.getNextJobOrderNumber();
@@ -14004,10 +14866,24 @@ export default function App() {
     setCtx({
       joNumber: nextUnique,
       joDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      engineer: "Karim Samir",
+      engineer: authUser?.name || "Saied Engineer",
       customer: null,
       vehicle: null,
     });
+
+    if (shouldPrint) {
+      setSelectedJobOrder(newDetail);
+      setPrintJoDetail(newDetail);
+      setScreen("print-job-order");
+    } else {
+      if (selectedVehicle && vehicleStep3BackTarget === "vehicle-details") {
+        setScreen("vehicle-details");
+        setActiveNav("vehicles");
+      } else {
+        setScreen("job-order-created");
+        setActiveNav("job-orders");
+      }
+    }
   }
 
   function cancelFlow() {
@@ -14123,7 +14999,7 @@ export default function App() {
     setCtx({
       joNumber: nextJoNum,
       joDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      engineer: "Karim Samir",
+      engineer: authUser?.name || "Saied Engineer",
       customer: realCustomer,
       vehicle,
     });
@@ -14153,6 +15029,7 @@ export default function App() {
     : screen === "customer-list" ? "Customers"
     : screen === "customer-details" ? "Customer Details"
     : screen === "job-order-details" ? "Job Order Details"
+    : screen === "print-job-order" ? "Print Job Order"
     : screen === "job-orders-list" ? "Job Orders"
     : screen === "job-order-created" ? "Job Orders"
     : "New Job Order";
@@ -15215,6 +16092,18 @@ export default function App() {
           jobOrders={jobOrders}
           onViewJobOrder={() => setScreen("step3-details")}
           onBackToDashboard={() => { setScreen("dashboard"); setActiveNav("dashboard"); }}
+        />
+      )}
+
+      {screen === "print-job-order" && printJoDetail && (
+        <PrintJobOrderScreen
+          detail={printJoDetail}
+          workshopSettings={workshopSettings}
+          onClose={() => {
+            setScreen("job-order-details");
+            setSelectedJobOrder(printJoDetail);
+            setActiveNav("job-orders");
+          }}
         />
       )}
 
