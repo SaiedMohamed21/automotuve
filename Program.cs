@@ -156,18 +156,32 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AllowFrontend");
 
-// Serve SPA static files from wwwroot
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// Serve SPA static files from wwwroot with CORS headers
+var staticFileOptions = new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+    }
+};
 
-// Serve uploads directory if located outside wwwroot or custom path
-var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
-if (Directory.Exists(uploadsPath))
+app.UseDefaultFiles();
+app.UseStaticFiles(staticFileOptions);
+
+// Serve external uploads directory if located outside wwwroot
+var externalUploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
+var wwwrootUploadsPath = Path.Combine(app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot"), "uploads");
+
+if (Directory.Exists(externalUploadsPath) && !string.Equals(externalUploadsPath, wwwrootUploadsPath, StringComparison.OrdinalIgnoreCase))
 {
     app.UseStaticFiles(new StaticFileOptions
     {
-        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
-        RequestPath = "/uploads"
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(externalUploadsPath),
+        RequestPath = "/uploads",
+        OnPrepareResponse = ctx =>
+        {
+            ctx.Context.Response.Headers["Access-Control-Allow-Origin"] = "*";
+        }
     });
 }
 

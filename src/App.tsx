@@ -264,6 +264,7 @@ interface JoDetail {
   vehicleColor?: string;
   notes?: string;
   requiredWork?: string;
+  completedWork?: string;
   engineer: string;
   technicians: string[];
   customerRequest: string;
@@ -385,6 +386,8 @@ function resolveJoDetail(
     vehicleVin: "",
     engineer: joEntry?.engineer || "",
     technicians: [],
+    requiredWork: joEntry?.customerRequest || "",
+    completedWork: "",
     customerRequest: joEntry?.customerRequest || "",
     workFoundItems: [],
     approvedItems: [],
@@ -584,7 +587,12 @@ function LoginScreen({ onLoginSuccess, workshopSettings }: { onLoginSuccess: (ro
               crossOrigin="anonymous"
               className="max-h-24 w-auto object-contain drop-shadow-2xl"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+                const target = e.target as HTMLImageElement;
+                target.onerror = null;
+                const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+                if (target.src !== fallback) {
+                  target.src = fallback;
+                }
               }}
             />
           </div>
@@ -767,7 +775,12 @@ function Sidebar({
             crossOrigin="anonymous"
             className="w-full h-full object-contain"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              const target = e.target as HTMLImageElement;
+              target.onerror = null;
+              const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              if (target.src !== fallback) {
+                target.src = fallback;
+              }
             }}
           />
         </div>
@@ -2689,10 +2702,35 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       </div>
 
       {/* ── Customer Request / Notes Section ──────────────────────────── */}
-      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm", marginBottom: "5mm" }}>
+      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm", marginBottom: "4mm" }}>
         <div style={s.sectionLabel}>Customer Request / Initial Notes</div>
         <div style={{ fontSize: "12px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>
           {customerReq}
+        </div>
+      </div>
+
+      {/* ── Required Work & Completed Work Sections ──────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4mm", marginBottom: "5mm" }}>
+        {/* Left: Required Work */}
+        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+            <span style={s.sectionLabel}>Required Work</span>
+            <span style={{ fontSize: "9px", fontWeight: 600, color: "#6a7282" }} dir="rtl">العمل المطلوب</span>
+          </div>
+          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", minHeight: "18mm" }} dir="auto">
+            {detail.requiredWork?.trim() || detail.customerRequest?.trim() || "No required work recorded."}
+          </div>
+        </div>
+
+        {/* Right: Completed Work */}
+        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "4mm 5mm" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+            <span style={s.sectionLabel}>Completed Work</span>
+            <span style={{ fontSize: "9px", fontWeight: 600, color: "#6a7282" }} dir="rtl">العمل المنفذ</span>
+          </div>
+          <div style={{ fontSize: "11px", color: "#1e293b", lineHeight: "1.5", whiteSpace: "pre-wrap", minHeight: "18mm" }} dir="auto">
+            {detail.completedWork?.trim() || "No completed work recorded."}
+          </div>
         </div>
       </div>
 
@@ -2765,15 +2803,28 @@ function PrintJobOrderScreen({
         >
           ← Back to Job Order Details
         </button>
-        <button
-          onClick={() => window.print()}
-          className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
-          </svg>
-          Print / Save PDF
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => window.print()}
+            className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
+            </svg>
+            Print Document
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="bg-[#2563eb] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1d4ed8] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Save PDF
+          </button>
+        </div>
       </div>
       <PrintJobOrderView detail={detail} settings={workshopSettings} />
     </div>
@@ -2846,6 +2897,35 @@ function JobOrderDetailsScreen({
   // Tab state
   const [activeTab, setActiveTab] = useState<"work" | "parts">("work");
   const [showQuotationModal, setShowQuotationModal] = useState(false);
+
+  // Work notes state (Required Work & Completed Work)
+  const [requiredWorkText, setRequiredWorkText] = useState(joDetail.requiredWork ?? joDetail.customerRequest ?? "");
+  const [completedWorkText, setCompletedWorkText] = useState(joDetail.completedWork ?? "");
+  const [savingWorkNotes, setSavingWorkNotes] = useState(false);
+  const [workNotesSavedSuccess, setWorkNotesSavedSuccess] = useState(false);
+
+  async function handleSaveWorkNotes() {
+    setSavingWorkNotes(true);
+    try {
+      const res = await api.updateJobOrder(joDetail.number, {
+        requiredWork: requiredWorkText,
+        completedWork: completedWorkText,
+      });
+      if (res) {
+        joDetail.requiredWork = res.requiredWork ?? requiredWorkText;
+        joDetail.completedWork = res.completedWork ?? completedWorkText;
+      } else {
+        joDetail.requiredWork = requiredWorkText;
+        joDetail.completedWork = completedWorkText;
+      }
+      setWorkNotesSavedSuccess(true);
+      setTimeout(() => setWorkNotesSavedSuccess(false), 3000);
+    } catch (err) {
+      console.error("Failed to update work notes:", err);
+    } finally {
+      setSavingWorkNotes(false);
+    }
+  }
 
   // Accountant editable work-found state (Open jobs)
   const [workItems, setWorkItems] = useState<WorkFoundItem[]>(() =>
@@ -3137,13 +3217,27 @@ function JobOrderDetailsScreen({
       </button>
 
       {/* JO heading */}
-      <div className="mb-5">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[16px] text-[#0f2340] tracking-[0.3px]">{joDetail.number}</span>
-          <StatusBadge status={joDetail.status} />
-          <span className="bg-[#f9fafb] border border-[#e5e7eb] font-['Inter:Medium',sans-serif] font-medium text-[12px] text-[#4a5565] px-2 py-0.5 rounded">{joDetail.type}</span>
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[16px] text-[#0f2340] tracking-[0.3px]">{joDetail.number}</span>
+            <StatusBadge status={joDetail.status} />
+            <span className="bg-[#f9fafb] border border-[#e5e7eb] font-['Inter:Medium',sans-serif] font-medium text-[12px] text-[#4a5565] px-2 py-0.5 rounded">{joDetail.type}</span>
+          </div>
+          <p className="font-['Inter:Regular',sans-serif] font-normal text-[14px] text-[#6a7282]">{joDetail.date}</p>
         </div>
-        <p className="font-['Inter:Regular',sans-serif] font-normal text-[14px] text-[#6a7282]">{joDetail.date}</p>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowPrintJO(true)}
+            className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm flex items-center gap-2"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d={svgPaths.p14db7f80} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.16667" />
+            </svg>
+            Print / Save PDF
+          </button>
+        </div>
       </div>
 
       {/* Customer + Vehicle cards */}
@@ -3233,10 +3327,69 @@ function JobOrderDetailsScreen({
             <>
               {/* Customer Request */}
               <div>
-                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#99a1af] tracking-[0.6px] uppercase mb-2">Customer Request</p>
+                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#99a1af] tracking-[0.6px] uppercase mb-2">Customer Request / Initial Notes</p>
                 <p className="font-['Inter:Regular',sans-serif] font-normal text-[15px] text-[#101828] bg-[#f9fafb] border border-[#e5e7eb] rounded-lg px-4 py-3">
                   {joDetail.customerRequest || "—"}
                 </p>
+              </div>
+
+              {/* Two Work Sections: Required Work & Completed Work */}
+              <div className="bg-white border border-[#e5e7eb] rounded-xl p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#101828]">Work Progress & Documentation</h3>
+                    <p className="font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282] mt-0.5">Record required and completed work items for this Job Order.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {workNotesSavedSuccess && (
+                      <span className="text-[12px] font-medium text-[#008236] bg-[#f0fdf4] border border-[#bbf7d0] px-3 py-1 rounded-lg animate-fadeIn">
+                        ✓ Saved to Database
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSaveWorkNotes}
+                      disabled={savingWorkNotes}
+                      className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+                    >
+                      {savingWorkNotes ? "Saving..." : "Save Work Notes"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* LEFT: Required Work */}
+                  <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#101828]">Required Work</span>
+                      <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#6a7282]" dir="rtl">العمل المطلوب</span>
+                    </div>
+                    <textarea
+                      rows={5}
+                      dir="auto"
+                      value={requiredWorkText}
+                      onChange={(e) => setRequiredWorkText(e.target.value)}
+                      placeholder="Enter required work items (Arabic or English)..."
+                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
+                    />
+                  </div>
+
+                  {/* RIGHT: Completed Work */}
+                  <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#101828]">Completed Work</span>
+                      <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#6a7282]" dir="rtl">العمل المنفذ</span>
+                    </div>
+                    <textarea
+                      rows={5}
+                      dir="auto"
+                      value={completedWorkText}
+                      onChange={(e) => setCompletedWorkText(e.target.value)}
+                      placeholder="Enter completed work items (Arabic or English)..."
+                      className="w-full flex-1 bg-white border border-[#d1d5dc] rounded-lg p-3 text-[14px] text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#0f2340]/20 resize-y"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* ── ACCOUNTANT: Complete Job — Invoice Review ── */}
@@ -4229,6 +4382,14 @@ function JobOrderDetailsScreen({
                         alt={workshopSettings.companyName || "Workshop Logo"}
                         crossOrigin="anonymous"
                         className="w-full h-full object-contain"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null;
+                          const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+                          if (target.src !== fallback) {
+                            target.src = fallback;
+                          }
+                        }}
                       />
                     </div>
                   ) : (
@@ -4510,6 +4671,14 @@ function JobOrderDetailsScreen({
                         alt={workshopSettings.companyName}
                         crossOrigin="anonymous"
                         style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null;
+                          const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+                          if (target.src !== fallback) {
+                            target.src = fallback;
+                          }
+                        }}
                       />
                     </div>
                   ) : (
@@ -4824,7 +4993,12 @@ function WarehouseSidebar({
             crossOrigin="anonymous"
             className="w-full h-full object-contain"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              const target = e.target as HTMLImageElement;
+              target.onerror = null;
+              const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              if (target.src !== fallback) {
+                target.src = fallback;
+              }
             }}
           />
         </div>
@@ -6389,7 +6563,12 @@ function OwnerSidebar({
             crossOrigin="anonymous"
             className="w-full h-full object-contain"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              const target = e.target as HTMLImageElement;
+              target.onerror = null;
+              const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              if (target.src !== fallback) {
+                target.src = fallback;
+              }
             }}
           />
         </div>
@@ -13797,7 +13976,12 @@ function AccountantSidebar({
             crossOrigin="anonymous"
             className="w-full h-full object-contain"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              const target = e.target as HTMLImageElement;
+              target.onerror = null;
+              const fallback = `${API_ORIGIN}/uploads/branding/sos_logo.jpeg`;
+              if (target.src !== fallback) {
+                target.src = fallback;
+              }
             }}
           />
         </div>

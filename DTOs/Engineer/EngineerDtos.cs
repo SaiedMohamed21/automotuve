@@ -148,11 +148,22 @@ namespace StarAutoCenter.DTOs.Engineer
         public string? Engineer { get; set; }
         public string? CustomerRequest { get; set; }
         public string? RequiredWork { get; set; }
+        public string? CompletedWork { get; set; }
         public string? Notes { get; set; }
         public List<string> Technicians { get; set; } = new();
         public List<WorkItemDto> ApprovedItems { get; set; } = new();
         public List<string> DeferredItems { get; set; } = new();
         public List<WorkItemDto> RecommendedItems { get; set; } = new();
+    }
+
+    public class UpdateJobOrderDto
+    {
+        public string? Type { get; set; }
+        public string? RequiredWork { get; set; }
+        public string? CompletedWork { get; set; }
+        public string? Notes { get; set; }
+        public string? Km { get; set; }
+        public string? Status { get; set; }
     }
 
     public class WorkItemDto

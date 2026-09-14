@@ -12,6 +12,7 @@ namespace StarAutoCenter.Services.Engineer
         Task<JobOrderDetailsDto?> GetByNumberAsync(string number);
         Task<JobOrderDetailsDto?> GetByIdAsync(int id);
         Task<JobOrderListDto> CreateAsync(CreateJobOrderDto dto);
+        Task<JobOrderDetailsDto?> UpdateAsync(string number, UpdateJobOrderDto dto);
         Task<bool> UpdateStatusAsync(string number, string status);
         Task<string> GetNextNumberAsync();
     }
@@ -98,6 +99,7 @@ namespace StarAutoCenter.Services.Engineer
                 Engineer = jo.Engineer,
                 CustomerRequest = !string.IsNullOrWhiteSpace(jo.RequiredWork) ? jo.RequiredWork : jo.Notes,
                 RequiredWork = jo.RequiredWork,
+                CompletedWork = jo.CompletedWork,
                 Notes = jo.Notes,
                 Technicians = new List<string>(),
                 ApprovedItems = jo.WorkItems.Where(w => !w.IsDeferred && !w.IsRecommended).Select(w => new WorkItemDto
@@ -146,6 +148,7 @@ namespace StarAutoCenter.Services.Engineer
                 Engineer = jo.Engineer,
                 CustomerRequest = !string.IsNullOrWhiteSpace(jo.RequiredWork) ? jo.RequiredWork : jo.Notes,
                 RequiredWork = jo.RequiredWork,
+                CompletedWork = jo.CompletedWork,
                 Notes = jo.Notes,
                 Technicians = new List<string>(),
                 ApprovedItems = jo.WorkItems.Where(w => !w.IsDeferred && !w.IsRecommended).Select(w => new WorkItemDto
@@ -160,6 +163,34 @@ namespace StarAutoCenter.Services.Engineer
                     Note = w.Note
                 }).ToList()
             };
+        }
+
+        public async Task<JobOrderDetailsDto?> UpdateAsync(string number, UpdateJobOrderDto dto)
+        {
+            var jo = await _context.JobOrders
+                .Include(j => j.Customer)
+                .Include(j => j.Vehicle)
+                .Include(j => j.WorkItems)
+                .FirstOrDefaultAsync(j => j.Number == number);
+
+            if (jo == null) return null;
+
+            if (dto.Type != null) jo.Type = dto.Type;
+            if (dto.RequiredWork != null) jo.RequiredWork = dto.RequiredWork;
+            if (dto.CompletedWork != null) jo.CompletedWork = dto.CompletedWork;
+            if (dto.Notes != null) jo.Notes = dto.Notes;
+            if (dto.Km != null)
+            {
+                jo.Km = dto.Km;
+                if (jo.Vehicle != null) jo.Vehicle.Km = dto.Km;
+            }
+            if (!string.IsNullOrWhiteSpace(dto.Status) && Enum.TryParse<JobOrderStatus>(dto.Status, true, out var statusEnum))
+            {
+                jo.Status = statusEnum;
+            }
+
+            await _context.SaveChangesAsync();
+            return await GetByNumberAsync(number);
         }
 
         public async Task<JobOrderListDto> CreateAsync(CreateJobOrderDto dto)

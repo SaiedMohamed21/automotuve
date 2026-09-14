@@ -60,6 +60,14 @@ namespace StarAutoCenter.Controllers.Engineer
             return CreatedAtAction(nameof(GetByNumber), new { number = result.Number }, result);
         }
 
+        [HttpPut("{number}")]
+        public async Task<IActionResult> Update(string number, [FromBody] UpdateJobOrderDto dto)
+        {
+            var result = await _jobOrderService.UpdateAsync(number, dto);
+            if (result == null) return NotFound(new { message = "Job order not found" });
+            return Ok(result);
+        }
+
         [HttpPut("{number}/status")]
         public async Task<IActionResult> UpdateStatus(string number, [FromBody] UpdateStatusDto dto)
         {

@@ -96,6 +96,8 @@ export const api = {
   getJobOrderByNumber: (number: string) => request<any>(`/job-orders/${number}`),
   getNextJobOrderNumber: () => request<{ number: string }>("/job-orders/next-number"),
   createJobOrder: (data: any) => request<any>("/job-orders", { method: "POST", body: JSON.stringify(data) }),
+  updateJobOrder: (number: string, data: { requiredWork?: string; completedWork?: string; notes?: string; status?: string; type?: string; km?: string }) =>
+    request<any>(`/job-orders/${number}`, { method: "PUT", body: JSON.stringify(data) }),
   updateJobOrderStatus: (idOrNumber: number | string, status: string) =>
     request<any>(`/job-orders/${idOrNumber}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
 

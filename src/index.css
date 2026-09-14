@@ -94,8 +94,9 @@ body,
     print-color-adjust: exact !important;
   }
 
-  /* The invoice print page */
-  .print-invoice-page {
+  /* The invoice and job order print pages */
+  .print-invoice-page,
+  .print-job-order-page {
     display: block !important;
     position: static !important;
     margin: 0 !important;
