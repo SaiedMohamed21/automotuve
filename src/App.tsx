@@ -2571,7 +2571,7 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
   const address = settings?.address || "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة";
   const phone = settings?.phone || "+20 100 933 4747";
   const logoUrl = settings?.logoUrl || "/uploads/branding/sos_logo.jpeg";
-  const fullLogoUrl = logoUrl ? (logoUrl.startsWith("http") ? logoUrl : `${API_ORIGIN}${logoUrl}`) : null;
+  const logoSrc = logoUrl.startsWith("http") ? logoUrl : logoUrl.startsWith("/") ? logoUrl : `/${logoUrl}`;
 
   const techs = Array.isArray(detail.technicians) && detail.technicians.length > 0
     ? detail.technicians.join(", ")
@@ -2602,14 +2602,15 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       marginBottom: "5mm",
     },
     logoBox: {
-      width: "48px",
+      width: "64px",
       height: "48px",
       borderRadius: "6px",
-      background: "#0f2340",
+      background: "#000000",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
+      padding: "4px",
       flexShrink: 0,
     },
     sectionLabel: {
@@ -2639,15 +2640,21 @@ function PrintJobOrderView({ detail, settings }: { detail: JoDetail; settings?: 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div style={s.header}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          {fullLogoUrl ? (
-            <div style={s.logoBox}>
-              <img src={fullLogoUrl} alt={companyName} crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-            </div>
-          ) : (
-            <div style={s.logoBox}>
-              <span style={{ color: "white", fontWeight: 700, fontSize: "16px" }}>SOS</span>
-            </div>
-          )}
+          <div style={s.logoBox}>
+            <img
+              src={logoSrc}
+              alt={companyName}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.onerror = null;
+                const fallback = "/uploads/branding/sos_logo.jpeg";
+                if (target.src !== fallback) {
+                  target.src = fallback;
+                }
+              }}
+            />
+          </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: "20px", color: "#0f2340", lineHeight: "1.2" }}>{companyName}</div>
             {phone && <div style={{ fontSize: "11px", color: "#364153", marginTop: "2px" }}>{phone}</div>}
@@ -2903,6 +2910,11 @@ function JobOrderDetailsScreen({
   const [completedWorkText, setCompletedWorkText] = useState(joDetail.completedWork ?? "");
   const [savingWorkNotes, setSavingWorkNotes] = useState(false);
   const [workNotesSavedSuccess, setWorkNotesSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    setRequiredWorkText(joDetail.requiredWork ?? joDetail.customerRequest ?? "");
+    setCompletedWorkText(joDetail.completedWork ?? "");
+  }, [joDetail.number, joDetail.requiredWork, joDetail.completedWork, joDetail.customerRequest]);
 
   async function handleSaveWorkNotes() {
     setSavingWorkNotes(true);
@@ -14781,6 +14793,8 @@ export default function App() {
           vehicleVin: live.vehicleVin || detail.vehicleVin,
           engineer: live.engineer || detail.engineer,
           customerRequest: live.customerRequest || detail.customerRequest,
+          requiredWork: live.requiredWork ?? detail.requiredWork ?? live.customerRequest ?? detail.customerRequest,
+          completedWork: live.completedWork ?? detail.completedWork,
           approvedItems: live.approvedItems ?? detail.approvedItems,
           deferredItems: live.deferredItems ?? detail.deferredItems,
         };
