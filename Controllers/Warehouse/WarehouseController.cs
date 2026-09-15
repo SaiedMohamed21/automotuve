@@ -134,6 +134,16 @@ namespace StarAutoCenter.Controllers.Warehouse
             return Ok(new { message = "Parts confirmed and stock updated" });
         }
 
+        [HttpPost("jobs/{joNumber}/complete")]
+        [Authorize(Roles = "Warehouse,Owner")]
+        public async Task<IActionResult> CompleteJob(string joNumber)
+        {
+            var success = await _warehouseService.CompleteJobOrderAsync(joNumber);
+            if (!success) return BadRequest(new { message = "Job order not found or is not in Open status" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
+            return Ok(new { message = "Job order completed successfully" });
+        }
+
         // ── Movements ──
         [HttpGet("movements")]
         public async Task<IActionResult> GetMovements([FromQuery] string? search = null)

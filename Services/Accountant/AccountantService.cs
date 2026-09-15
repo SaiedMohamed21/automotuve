@@ -259,42 +259,94 @@ namespace StarAutoCenter.Services.Accountant
         {
             var jo = await _context.JobOrders
                 .Include(j => j.WorkItems)
+                .Include(j => j.Invoice)
                 .FirstOrDefaultAsync(j => j.Number == joNumber);
 
             if (jo == null) return false;
 
-            // Remove existing work items
-            _context.JobOrderWorkItems.RemoveRange(jo.WorkItems);
-
-            // Add new work items
-            foreach (var item in dto.Items)
+            // Closed / Invoiced job order protection
+            if (jo.Status == JobOrderStatus.Closed || jo.Invoice != null)
             {
-                var workItem = new JobOrderWorkItem
-                {
-                    JobOrderId = jo.Id,
-                    Item = item.Description,
-                    Note = item.Note,
-                    IsDeferred = !item.Approved,
-                    IsRecommended = false
-                };
-                _context.JobOrderWorkItems.Add(workItem);
+                return false;
+            }
 
-                // If deferred, also add to DeferredWork for vehicle history
-                if (!item.Approved)
+            if (dto == null || dto.Items == null) return true;
+
+            foreach (var itemDto in dto.Items)
+            {
+                if (string.IsNullOrWhiteSpace(itemDto.Description)) continue;
+                var trimmedItem = itemDto.Description.Trim();
+
+                // 1. Upsert JobOrderWorkItem (Match by Id if > 0, otherwise by description)
+                JobOrderWorkItem? existingWorkItem = null;
+                if (itemDto.Id > 0)
                 {
-                    var deferred = new DeferredWork
+                    existingWorkItem = jo.WorkItems.FirstOrDefault(w => w.Id == itemDto.Id);
+                }
+
+                if (existingWorkItem == null)
+                {
+                    existingWorkItem = jo.WorkItems.FirstOrDefault(w =>
+                        string.Equals(w.Item?.Trim(), trimmedItem, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (existingWorkItem != null)
+                {
+                    existingWorkItem.Item = trimmedItem;
+                    existingWorkItem.Note = itemDto.Note;
+                    existingWorkItem.IsDeferred = !itemDto.Approved;
+                }
+                else
+                {
+                    var newWorkItem = new JobOrderWorkItem
                     {
-                        VehicleId = jo.VehicleId,
-                        Item = item.Description,
-                        Date = DateTime.UtcNow,
-                        JobOrderNumber = jo.Number,
-                        Km = jo.Km,
-                        Engineer = jo.Engineer
+                        JobOrderId = jo.Id,
+                        Item = trimmedItem,
+                        Note = itemDto.Note,
+                        IsDeferred = !itemDto.Approved,
+                        IsRecommended = false
                     };
-                    _context.DeferredWorks.Add(deferred);
+                    _context.JobOrderWorkItems.Add(newWorkItem);
+                }
+
+                // 2. Handle DeferredWork history records with duplicate prevention
+                var existingDeferred = await _context.DeferredWorks.FirstOrDefaultAsync(d =>
+                    d.VehicleId == jo.VehicleId &&
+                    d.JobOrderNumber == jo.Number &&
+                    d.Item == trimmedItem);
+
+                if (!itemDto.Approved)
+                {
+                    if (existingDeferred == null)
+                    {
+                        var deferred = new DeferredWork
+                        {
+                            VehicleId = jo.VehicleId,
+                            Item = trimmedItem,
+                            Note = itemDto.Note,
+                            Date = DateTime.UtcNow,
+                            JobOrderNumber = jo.Number,
+                            Km = jo.Km,
+                            Engineer = jo.Engineer
+                        };
+                        _context.DeferredWorks.Add(deferred);
+                    }
+                    else
+                    {
+                        existingDeferred.Note = itemDto.Note;
+                    }
+                }
+                else
+                {
+                    // If item was previously deferred and is now approved, remove from deferred vehicle history
+                    if (existingDeferred != null)
+                    {
+                        _context.DeferredWorks.Remove(existingDeferred);
+                    }
                 }
             }
 
+            // Note: JobOrder.Status remains UNCHANGED (Open)
             await _context.SaveChangesAsync();
             return true;
         }

@@ -117,6 +117,7 @@ namespace StarAutoCenter.DTOs.Accountant
 
     public class WorkFoundInputItem
     {
+        public int Id { get; set; }
         public string Description { get; set; } = string.Empty;
         public string? Note { get; set; }
         public bool Approved { get; set; }

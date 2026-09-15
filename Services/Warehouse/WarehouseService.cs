@@ -23,6 +23,7 @@ namespace StarAutoCenter.Services.Warehouse
         Task<List<IssuedPartDto>> IssuePartsAsync(string joNumber, IssuePartRequestDto dto);
         Task<bool> RemoveIssuedPartAsync(string joNumber, int partId);
         Task<bool> ConfirmIssueAsync(string joNumber);
+        Task<bool> CompleteJobOrderAsync(string joNumber);
 
         // Movements
         Task<List<StockMovementDto>> GetMovementsAsync(string? search = null);
@@ -406,8 +407,22 @@ namespace StarAutoCenter.Services.Warehouse
                 });
             }
 
-            jo.Status = JobOrderStatus.Complete;
+            // Physical stock issued; Job Order status remains Open for Engineer work
+            await _context.SaveChangesAsync();
+            return true;
+        }
 
+        public async Task<bool> CompleteJobOrderAsync(string joNumber)
+        {
+            var jo = await _context.JobOrders.FirstOrDefaultAsync(j => j.Number == joNumber);
+            if (jo == null) return false;
+
+            if (jo.Status != JobOrderStatus.Open)
+            {
+                return false;
+            }
+
+            jo.Status = JobOrderStatus.Complete;
             await _context.SaveChangesAsync();
             return true;
         }

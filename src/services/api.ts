@@ -133,6 +133,7 @@ export const api = {
   removeIssuedPart: (joNumber: string, partId: number) =>
     request<any>(`/warehouse/jobs/${joNumber}/parts/${partId}`, { method: "DELETE" }),
   confirmPartsIssued: (joNumber: string) => request<any>(`/warehouse/jobs/${joNumber}/confirm`, { method: "POST" }),
+  completeJobOrder: (joNumber: string) => request<any>(`/warehouse/jobs/${joNumber}/complete`, { method: "POST" }),
   getStockMovements: (search?: string) => request<any[]>(`/warehouse/movements${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   updateStockCount: (items: { partId: number; actualQty: number }[]) =>
     request<any>("/warehouse/stock-count", { method: "POST", body: JSON.stringify(items) }),
@@ -165,7 +166,7 @@ export const api = {
     return request<any[]>(`/accountant/jobs${qStr ? `?${qStr}` : ""}`);
   },
   getAccountantJobDetails: (joNumber: string) => request<any>(`/accountant/jobs/${joNumber}`),
-  saveWorkFound: (joNumber: string, items: { description: string; note?: string; approved: boolean }[]) =>
+  saveWorkFound: (joNumber: string, items: { id?: number | string; description: string; note?: string; approved: boolean }[]) =>
     request<any>(`/accountant/jobs/${joNumber}/work-found`, { method: "POST", body: JSON.stringify({ items }) }),
   saveJobOrderLabor: (joNumber: string, laborItems: { description: string; amount: number; sortOrder?: number }[]) =>
     request<any>(`/accountant/jobs/${joNumber}/labor`, { method: "POST", body: JSON.stringify({ laborItems }) }),

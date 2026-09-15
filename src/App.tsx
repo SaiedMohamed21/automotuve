@@ -3037,12 +3037,25 @@ function JobOrderDetailsScreen({
   }
 
   // Accountant editable work-found state (Open jobs)
-  const [workItems, setWorkItems] = useState<WorkFoundItem[]>(() =>
-    (joDetail.workFoundItems || []).map((item) => ({
-      ...item,
+  const mapInitialWorkItems = (items?: any[]): WorkFoundItem[] => {
+    return (items || []).map((item) => ({
+      id: item.id ? item.id.toString() : `work-${Date.now()}-${Math.random()}`,
+      description: item.description || item.item || "",
+      note: item.note || "",
+      approved: item.approved !== undefined ? item.approved : !item.isDeferred,
       options: item.options || [],
-    }))
-  );
+      selectedPart: item.selectedPart,
+      selectedOptionId: item.selectedOptionId,
+    }));
+  };
+
+  const [workItems, setWorkItems] = useState<WorkFoundItem[]>(() => mapInitialWorkItems(joDetail.workFoundItems));
+
+  useEffect(() => {
+    if (joDetail.workFoundItems) {
+      setWorkItems(mapInitialWorkItems(joDetail.workFoundItems));
+    }
+  }, [joDetail.number, joDetail.workFoundItems]);
 
   // New work item creation state
   const [newRequirement, setNewRequirement] = useState("");
@@ -3051,9 +3064,9 @@ function JobOrderDetailsScreen({
   const [addingOptionToItemId, setAddingOptionToItemId] = useState<string | null>(null);
   const [inlinePartSearch, setInlinePartSearch] = useState("");
 
-  const [saved, setSaved] = useState(
-    (joDetail.workFoundItems?.length ?? 0) > 0 && (joDetail.approvedItems?.length ?? 0) > 0
-  );
+  const [savingWorkFound, setSavingWorkFound] = useState(false);
+  const [saveWorkFoundSuccessMsg, setSaveWorkFoundSuccessMsg] = useState("");
+  const [saved, setSaved] = useState(false);
 
   // Accountant invoice state (Complete jobs)
   // Backward compat: if existing job has a single laborAmount but no laborItems, seed one item
@@ -3319,9 +3332,20 @@ function JobOrderDetailsScreen({
     setSaved(false);
   }
 
-  function handleSaveDecision() {
-    if (onSaveWorkFound) onSaveWorkFound(workItems);
-    setSaved(true);
+  async function handleSaveDecision() {
+    setSavingWorkFound(true);
+    setSaveWorkFoundSuccessMsg("");
+    try {
+      if (onSaveWorkFound) {
+        await onSaveWorkFound(workItems);
+      }
+      setSaveWorkFoundSuccessMsg("✓ Customer decision saved successfully to Job Order.");
+      setTimeout(() => setSaveWorkFoundSuccessMsg(""), 4000);
+    } catch (err) {
+      console.error("Failed to save customer decision:", err);
+    } finally {
+      setSavingWorkFound(false);
+    }
   }
 
   return (
@@ -4239,22 +4263,33 @@ function JobOrderDetailsScreen({
 
                   {/* Save Customer Decision Action */}
                   {workItems.length > 0 && (
-                    <div className="pt-2">
+                    <div className="pt-2 space-y-2">
                       <button
+                        type="button"
+                        disabled={savingWorkFound}
                         onClick={handleSaveDecision}
-                        className="w-full py-3 bg-[#0f2340] text-white font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] rounded-lg hover:bg-[#1a3560] transition-colors shadow-md flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-[#0f2340] text-white font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] rounded-lg hover:bg-[#1a3560] transition-colors shadow-md flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                       >
                         <span>💾</span>
-                        {saved ? "✓ Customer Decision Saved to Job Order" : "Save Customer Decision (Approved & Deferred Work)"}
+                        {savingWorkFound ? "Saving..." : "Save Customer Decision (Approved & Deferred Work)"}
                       </button>
+
+                      {saveWorkFoundSuccessMsg && (
+                        <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg text-[13px] font-semibold flex items-center justify-between shadow-sm animate-fade-in">
+                          <span className="flex items-center gap-2">
+                            <span>✓</span> {saveWorkFoundSuccessMsg}
+                          </span>
+                        </div>
+                      )}
+
                       <p className="text-[11px] text-center text-[#64748b] mt-1.5">
-                        Saving records the customer decision. Inventory will NOT be changed until physical warehouse issue.
+                        Saving records the customer decision. The Job Order remains OPEN for further work additions. Inventory will NOT be changed until physical warehouse issue.
                       </p>
                     </div>
                   )}
 
-                  {/* After save: Split summary */}
-                  {saved && workItems.length > 0 && (
+                  {/* Work Items Summary */}
+                  {workItems.length > 0 && (
                     <div className="grid grid-cols-2 gap-4 pt-1">
                       <div className="bg-[#f0fdf4] border-2 border-[#bbf7d0] rounded-xl px-5 py-4">
                         <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#008236] tracking-[0.6px] uppercase mb-1">
@@ -5777,6 +5812,7 @@ function WarehousePartsIssueScreen({
   onAddPart,
   onRemovePart,
   onConfirm,
+  onCompleteJob,
   confirmed,
 }: {
   job: WJob;
@@ -5787,9 +5823,10 @@ function WarehousePartsIssueScreen({
   onAddPart: () => void;
   onRemovePart: (partId: string) => void;
   onConfirm: () => void;
+  onCompleteJob?: () => void;
   confirmed: boolean;
 }) {
-  const isAlreadyCompleted = confirmed || job.status === "Complete" || job.status === "Closed";
+  const isAlreadyCompleted = job.status === "Complete" || job.status === "Closed";
   const totalQty = issuedParts.reduce((sum, p) => sum + p.qty, 0);
 
   return (
@@ -5815,7 +5852,7 @@ function WarehousePartsIssueScreen({
             <div>
               <p className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#6a7282] tracking-[0.6px] uppercase mb-1">Status</p>
               <div className="mt-1">
-                <StatusBadge status={isAlreadyCompleted && job.status === "Open" ? "Complete" : job.status} />
+                <StatusBadge status={job.status} />
               </div>
             </div>
             <div>
@@ -5824,41 +5861,48 @@ function WarehousePartsIssueScreen({
               <p className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#6a7282] mt-0.5">{job.plate}</p>
             </div>
             <div>
-              <p className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#6a7282] tracking-[0.6px] uppercase mb-1">Relevant Work</p>
-              <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[16px] text-[#111827]">{job.serviceType}</p>
-              <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#6a7282] mt-0.5">Customer reported issues. Check and advise.</p>
+              <p className="font-['Inter:Medium',sans-serif] font-medium text-[11px] text-[#6a7282] tracking-[0.6px] uppercase mb-1">Customer</p>
+              <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#111827]">{job.customer}</p>
+              <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#6a7282] mt-0.5">{job.phone}</p>
             </div>
           </div>
         </div>
 
-        {/* Approved Work Reference Card */}
+        {/* Customer Approved Work Items Card */}
         {approvedItems && approvedItems.length > 0 && (
-          <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-[10px] p-4 mb-5 shadow-sm">
-            <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#008236] tracking-[0.6px] uppercase mb-2 flex items-center gap-1.5">
-              <span>✓</span> Customer Approved Work & Requested Parts (Reference for Warehouse)
-            </p>
-            <div className="space-y-1.5">
+          <div className="bg-white border border-[#e5e7eb] rounded-[10px] p-5 mb-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3 border-b border-[#f3f4f6] pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[16px]">📋</span>
+                <h3 className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#0f2340]">Customer Approved Work & Requested Parts</h3>
+              </div>
+              <span className="bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0] text-[11px] font-semibold px-2.5 py-0.5 rounded-full">{approvedItems.length} approved item{approvedItems.length > 1 ? "s" : ""}</span>
+            </div>
+            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
               {approvedItems.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between text-[13px] bg-white border border-[#bbf7d0] rounded-lg px-3.5 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#008236]" />
-                    <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[#101828]">{item.item}</span>
+                <div key={idx} className="flex items-start justify-between bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-3">
+                  <div>
+                    <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] text-[#111827] flex items-center gap-1.5">
+                      <span className="text-[#16a34a] font-bold">✓</span> {item.item}
+                    </p>
+                    {item.note && (
+                      <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#6a7282] mt-1 pl-4 border-l-2 border-[#d1d5dc]">{item.note}</p>
+                    )}
                   </div>
-                  {item.note && (
-                    <span className="font-['Inter:Medium',sans-serif] text-[#008236] text-[12px] bg-[#f0fdf4] px-2 py-0.5 rounded border border-[#bbf7d0]">
-                      {item.note}
-                    </span>
-                  )}
+                  <span className="text-[11px] font-['Inter:Medium',sans-serif] font-medium text-[#15803d] bg-[#dcfce7] px-2 py-0.5 rounded shrink-0">Approved</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Parts table */}
+        {/* Issued Parts table */}
         <div className="bg-white border border-[#e5e7eb] rounded-[10px] overflow-hidden mb-5">
-          <div className="px-5 py-4 flex items-center justify-between border-b border-[#f3f4f6]">
-            <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#1e2939] tracking-[0.7px] uppercase">Parts Issued to This Job</p>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#e5e7eb]">
+            <div className="flex items-center gap-2">
+              <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#111827]">Parts to Issue for this Job</p>
+              <span className="font-['Inter:Medium',sans-serif] font-medium text-[12px] text-[#6a7282] bg-[#f3f4f6] px-2 py-0.5 rounded-full">{issuedParts.length} parts</span>
+            </div>
             {!isAlreadyCompleted && (
               <button onClick={onAddPart} className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[13px] px-4 py-2 rounded-lg hover:bg-[#1a3560] transition-colors">
                 + Add Part to Job
@@ -5903,17 +5947,38 @@ function WarehousePartsIssueScreen({
 
         {/* Footer actions */}
         {!isAlreadyCompleted ? (
-          <div className="flex items-center justify-between">
-            <p className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#6a7282]">
-              Warehouse: Hassan Nour · {job.date}
-            </p>
-            <button
-              onClick={onConfirm}
-              disabled={issuedParts.length === 0}
-              className={`font-['Inter:Medium',sans-serif] font-medium text-[14px] px-6 py-2.5 rounded-lg transition-colors ${issuedParts.length > 0 ? "bg-[#0f2340] text-white hover:bg-[#1a3560]" : "bg-[#d1d5dc] text-[#6a7282] cursor-not-allowed"}`}
-            >
-              ✓ Confirm Issue — {totalQty} Items
-            </button>
+          <div className="space-y-3">
+            {confirmed && (
+              <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg p-3 text-[13px] text-[#1e40af] flex items-center justify-between shadow-sm">
+                <span>✓ Physical stock issued for this Job Order. Job Order status remains <strong>OPEN</strong> while Engineer works.</span>
+                <span className="text-[11px] font-semibold bg-[#dbeafe] text-[#1e40af] px-2.5 py-0.5 rounded-full">Status: OPEN</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between bg-white border border-[#e5e7eb] rounded-xl p-4">
+              <p className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#6a7282]">
+                Warehouse: Hassan Nour · {job.date}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={onConfirm}
+                  disabled={issuedParts.length === 0}
+                  className={`font-['Inter:Medium',sans-serif] font-medium text-[13px] px-5 py-2.5 rounded-lg transition-colors ${issuedParts.length > 0 ? "bg-[#3b82f6] text-white hover:bg-[#2563eb]" : "bg-[#d1d5dc] text-[#6a7282] cursor-not-allowed"}`}
+                  title="Deduct physical inventory stock for this job"
+                >
+                  📦 Confirm Physical Issue ({totalQty})
+                </button>
+
+                {onCompleteJob && (
+                  <button
+                    onClick={onCompleteJob}
+                    className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[13px] px-6 py-2.5 rounded-lg bg-[#0f2340] text-white hover:bg-[#1a3560] transition-colors shadow-sm flex items-center gap-1.5"
+                    title="Mark Job Order as Completed and send to Accountant for invoicing"
+                  >
+                    <span>✓</span> Complete Job Order
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-[10px] p-5 flex items-center justify-between shadow-sm">
@@ -5923,11 +5988,11 @@ function WarehousePartsIssueScreen({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#0f2340]">Stock Updated & Job Marked COMPLETE</p>
-                  <StatusBadge status="Complete" />
+                  <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#0f2340]">Job Order Marked COMPLETED</p>
+                  <StatusBadge status={job.status} />
                 </div>
                 <p className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#15803d] mt-0.5">
-                  {totalQty} items successfully issued to {job.number}. Inventory decreased, stock out logged, and Job Order status transitioned: <strong>OPEN → COMPLETE</strong>. Ready for Accountant invoicing.
+                  Job Order status transitioned: <strong>OPEN → COMPLETED</strong>. Ready for Accountant invoicing.
                 </p>
               </div>
             </div>
@@ -15061,10 +15126,43 @@ export default function App() {
     }));
     setWMovements((prev) => [...newMovements, ...prev]);
 
-    // 3. Mark parts confirmed for this job
+    // 3. Mark parts confirmed for this job (Stock issued; Job Order status remains OPEN for Engineer work)
     setWPartsConfirmedSet((prev) => new Set([...prev, joNum]));
 
-    // 4. Update Job Order status to "Complete" across state
+    // 4. Backend sync: issue parts and confirm issue in API (Leaves Job Order status OPEN)
+    try {
+      const partsPayload = issued
+        .map((ip) => ({
+          partId: parseInt(ip.partId, 10),
+          qty: ip.qty,
+        }))
+        .filter((p) => !isNaN(p.partId));
+
+      if (partsPayload.length > 0) {
+        await api.issuePartsToJobOrder(joNum, partsPayload);
+      }
+      await api.confirmPartsIssued(joNum);
+    } catch (err) {
+      console.warn("Backend confirm issue call failed:", err);
+    }
+  }
+
+  async function handleWCompleteJob() {
+    if (!wSelectedJob) return;
+    const joNum = wSelectedJob.number;
+
+    try {
+      await api.completeJobOrder(joNum);
+    } catch (err) {
+      console.warn("Backend complete job call failed, trying status update API:", err);
+      try {
+        await api.updateJobOrderStatus(joNum, "Complete");
+      } catch (e) {
+        console.error("Backend status update error:", e);
+      }
+    }
+
+    // Update Job Order status to "Complete" across state upon explicit Warehouse completion
     setJobOrders((prev) =>
       prev.map((jo) => (jo.number === joNum ? { ...jo, status: "Complete" } : jo))
     );
@@ -15080,28 +15178,6 @@ export default function App() {
     });
     setWSelectedJob((prev) => (prev ? { ...prev, status: "Complete" } : null));
     setSelectedJobOrder((prev) => (prev && prev.number === joNum ? { ...prev, status: "Complete" } : prev));
-
-    // 5. Backend sync: issue parts and confirm issue in API
-    try {
-      const partsPayload = issued
-        .map((ip) => ({
-          partId: parseInt(ip.partId, 10),
-          qty: ip.qty,
-        }))
-        .filter((p) => !isNaN(p.partId));
-
-      if (partsPayload.length > 0) {
-        await api.issuePartsToJobOrder(joNum, partsPayload);
-      }
-      await api.confirmPartsIssued(joNum);
-    } catch (err) {
-      console.warn("Backend confirm issue call failed, trying status update directly:", err);
-      try {
-        await api.updateJobOrderStatus(joNum, "Complete");
-      } catch (e) {
-        console.warn("Backend status update error:", e);
-      }
-    }
   }
 
   // Vehicle flow state
@@ -16601,10 +16677,12 @@ export default function App() {
           }}
           onSaveWorkFound={(items) => {
             const payloadItems = items.map((i) => {
+              const numericId = typeof i.id === "number" ? i.id : (!isNaN(Number(i.id)) && Number(i.id) > 0 ? Number(i.id) : 0);
               const formattedNote = i.selectedPart
                 ? `${i.selectedPart.brand} (${i.selectedPart.partType || "Part"}) · ${i.selectedPart.sellingPrice.toLocaleString()} EGP [Qty: ${i.selectedPart.qty}]`
-                : i.note || "";
+                : (i as any).note || "";
               return {
+                id: numericId,
                 description: i.description,
                 note: formattedNote,
                 approved: i.approved,
@@ -16787,7 +16865,8 @@ export default function App() {
           onAddPart={() => setWarehouseModal("add-part-to-job")}
           onRemovePart={handleWRemovePart}
           onConfirm={handleWConfirmIssue}
-          confirmed={wPartsConfirmedSet.has(wSelectedJob.number) || wSelectedJob.status === "Complete" || wSelectedJob.status === "Closed"}
+          onCompleteJob={handleWCompleteJob}
+          confirmed={wPartsConfirmedSet.has(wSelectedJob.number)}
         />
       )}
 
