@@ -4309,14 +4309,14 @@ function JobOrderDetailsScreen({
                                 <span className="text-white text-[11px]">✓</span>
                               </div>
                               <div>
-                                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#101828]">{item.item}</p>
+                                <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#101828]">{item.item || item.note || "Approved Work"}</p>
                                 {item.selectedPart ? (
                                   <p className="text-[13px] text-[#15803d] mt-0.5">
                                     Selected: <strong className="font-semibold">{item.selectedPart.brand}</strong> ({item.selectedPart.partType || "Part"}) · <span className="font-mono font-semibold">{item.selectedPart.sellingPrice.toLocaleString()} EGP</span>
                                   </p>
-                                ) : item.note ? (
+                                ) : (item.note && item.item ? (
                                   <p className="text-[12px] text-[#15803d] mt-0.5">{item.note}</p>
-                                ) : null}
+                                ) : null)}
                               </div>
                             </div>
                             <span className="text-[11px] font-bold text-[#008236] bg-white border border-[#bbf7d0] px-3 py-1 rounded-full uppercase tracking-wider">
@@ -4351,7 +4351,7 @@ function JobOrderDetailsScreen({
                                 <div className="w-5 h-5 rounded-full border-2 border-amber-500 bg-amber-100 flex items-center justify-center shrink-0">
                                   <span className="text-amber-700 text-[10px]">⟳</span>
                                 </div>
-                                <span className="font-['Inter:Bold',sans-serif] font-bold text-[15px] text-[#101828]">{def.item}</span>
+                                <span className="font-['Inter:Bold',sans-serif] font-bold text-[15px] text-[#101828]">{typeof def === "string" ? def : (def.item || def.note || "Deferred Work")}</span>
                               </div>
                               <span className="text-[11px] font-bold text-amber-800 bg-white border border-amber-300 px-3 py-1 rounded-full uppercase tracking-wider">
                                 Deferred
@@ -14807,6 +14807,8 @@ export default function App() {
                         description: li.description || "",
                         amount: (li.amount !== undefined ? li.amount : 0).toString(),
                       })) : (curr.laborItems || []),
+                      approvedItems: Array.isArray(acctDetail.approvedItems) && acctDetail.approvedItems.length > 0 ? acctDetail.approvedItems : (curr.approvedItems || []),
+                      deferredItems: Array.isArray(acctDetail.deferredItems) && acctDetail.deferredItems.length > 0 ? acctDetail.deferredItems : (curr.deferredItems || []),
                       issuedParts: Array.isArray(acctDetail.issuedParts) ? acctDetail.issuedParts.map((ip: any) => ({
                         partId: ip.partId?.toString() || "",
                         partName: ip.partName || "",
@@ -14822,6 +14824,38 @@ export default function App() {
                       hasInvoice: acctDetail.hasInvoice ?? (curr.status === "Closed"),
                       invoiceNumber: acctDetail.invoiceNumber || curr.invoiceNumber,
                       invoiceCreated: acctDetail.hasInvoice ?? (curr.status === "Closed"),
+                    };
+                  });
+                }
+              })
+              .catch(() => {});
+
+            api.getJobOrderByNumber(prev.number)
+              .then((live) => {
+                if (live && live.number) {
+                  setSelectedJobOrder((curr) => {
+                    if (!curr || curr.number !== live.number) return curr;
+                    return {
+                      ...curr,
+                      requiredWork: live.requiredWork ?? curr.requiredWork,
+                      completedWork: live.completedWork ?? curr.completedWork,
+                      notes: live.notes ?? curr.notes,
+                      status: live.status || curr.status,
+                      approvedItems: Array.isArray(live.approvedItems) && live.approvedItems.length > 0 ? live.approvedItems : (curr.approvedItems || []),
+                      deferredItems: Array.isArray(live.deferredItems) && live.deferredItems.length > 0 ? live.deferredItems : (curr.deferredItems || []),
+                      partsTotal: live.partsTotal ?? curr.partsTotal,
+                      expensesTotal: live.expensesTotal ?? curr.expensesTotal,
+                      grandTotal: live.grandTotal ?? curr.grandTotal,
+                      hasInvoice: live.hasInvoice ?? curr.hasInvoice,
+                      invoiceNumber: live.invoiceNumber ?? curr.invoiceNumber,
+                      issuedParts: Array.isArray(live.issuedParts) && live.issuedParts.length > 0 ? live.issuedParts.map((ip: any) => ({
+                        partId: ip.partId?.toString() || "",
+                        partName: ip.partName || "",
+                        partNumber: ip.partNumber || "",
+                        qty: ip.qty || 0,
+                        sellingPrice: ip.sellingPrice || 0,
+                        total: ip.total || 0,
+                      })) : curr.issuedParts,
                     };
                   });
                 }
@@ -15148,6 +15182,11 @@ export default function App() {
           completedWork: live.completedWork ?? detail.completedWork,
           notes: live.notes ?? detail.notes,
           technicians: Array.isArray(live.technicians) ? live.technicians : (detail.technicians || []),
+          approvedItems: Array.isArray(live.approvedItems) && live.approvedItems.length > 0 ? live.approvedItems : (detail.approvedItems || []),
+          deferredItems: Array.isArray(live.deferredItems) && live.deferredItems.length > 0 ? live.deferredItems : (detail.deferredItems || []),
+          laborAmount: live.laborAmount ?? detail.laborAmount,
+          laborItems: (Array.isArray(live.laborItems) && live.laborItems.length > 0) ? live.laborItems : (detail.laborItems || []),
+          additionalExpenses: (Array.isArray(live.additionalExpenses) && live.additionalExpenses.length > 0) ? live.additionalExpenses : (detail.additionalExpenses || []),
           partsTotal: live.partsTotal ?? detail.partsTotal,
           expensesTotal: live.expensesTotal ?? detail.expensesTotal,
           grandTotal: live.grandTotal ?? detail.grandTotal,
