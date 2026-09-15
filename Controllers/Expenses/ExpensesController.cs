@@ -2,7 +2,9 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Expenses;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Expenses;
 
 namespace StarAutoCenter.Controllers.Expenses
@@ -13,10 +15,12 @@ namespace StarAutoCenter.Controllers.Expenses
     public class ExpensesController : ControllerBase
     {
         private readonly IExpenseService _expenseService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public ExpensesController(IExpenseService expenseService)
+        public ExpensesController(IExpenseService expenseService, IHubContext<DataSyncHub> hubContext)
         {
             _expenseService = expenseService;
+            _hubContext = hubContext;
         }
 
         [HttpGet]
@@ -56,6 +60,7 @@ namespace StarAutoCenter.Controllers.Expenses
             {
                 var username = User?.Identity?.Name ?? "Accountant";
                 var created = await _expenseService.CreateExpenseAsync(dto, username);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Expense");
                 return CreatedAtAction(nameof(GetExpenseById), new { id = created.Id }, created);
             }
             catch (ArgumentException ex)
@@ -83,6 +88,7 @@ namespace StarAutoCenter.Controllers.Expenses
                 {
                     return NotFound(new { message = $"Expense with ID #{id} was not found." });
                 }
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Expense");
                 return Ok(updated);
             }
             catch (InvalidOperationException ex)
@@ -109,6 +115,7 @@ namespace StarAutoCenter.Controllers.Expenses
                 {
                     return NotFound(new { message = $"Expense with ID #{id} was not found." });
                 }
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Expense");
                 return Ok(result);
             }
             catch (Exception ex)
@@ -127,6 +134,7 @@ namespace StarAutoCenter.Controllers.Expenses
                 {
                     return NotFound(new { message = $"Expense with ID #{id} was not found." });
                 }
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Expense");
                 return Ok(new { message = $"Expense #{id} has been voided/archived successfully." });
             }
             catch (Exception ex)

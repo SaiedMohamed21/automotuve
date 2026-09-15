@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { api, getAuthToken, setAuthToken, removeAuthToken, API_ORIGIN, type WorkshopSettings } from "./services/api";
+import { setupSignalRSync, stopSignalRSync } from "./services/signalrService";
 import { toPng } from "html-to-image";
 import svgPaths from "./imports/CreateAppDesign-5/svg-ctoveqeshk";
 import imgCanvas from "./imports/CreateAppDesign-5/40596e1a727bb6e2289087a4a363b5adae14c080.png";
@@ -286,6 +287,12 @@ interface JoDetail {
   laborAmount?: number;
   laborItems?: LaborItem[];
   additionalExpenses?: AdditionalExpense[];
+  issuedParts?: WIssuedPart[];
+  partsTotal?: number;
+  expensesTotal?: number;
+  grandTotal?: number;
+  hasInvoice?: boolean;
+  invoiceNumber?: string;
   invoiceCreated?: boolean;
 }
 
@@ -359,15 +366,61 @@ function computeNextJobNumber(existingJobs: { number: string }[]): string {
   return `${prefix}${String(maxSeq + 1).padStart(5, "0")}`;
 }
 
+function normalizeInvoice(i: any): Invoice {
+  return {
+    invoiceNumber: i.invoiceNumber || "",
+    jobOrderNumber: i.jobOrderNumber || i.jobOrder?.number || "",
+    date: i.date || "",
+    customerName: i.customerName || i.customer || i.jobOrder?.customer?.name || "",
+    customerPhone: i.customerPhone || i.phone || i.jobOrder?.customer?.phone || "",
+    vehicleName: i.vehicleName || i.vehicle || (i.jobOrder?.vehicle ? `${i.jobOrder.vehicle.make} ${i.jobOrder.vehicle.model}` : ""),
+    vehiclePlate: i.vehiclePlate || i.plate || i.jobOrder?.vehicle?.plate || "",
+    vehicleKm: i.vehicleKm || "",
+    vehicleVin: i.vehicleVin || "",
+    engineer: i.engineer || "",
+    issuedParts: Array.isArray(i.issuedParts) ? i.issuedParts : [],
+    partsPriceMap: i.partsPriceMap || {},
+    partsTotal: i.partsTotal || 0,
+    laborAmount: i.laborAmount || 0,
+    laborItems: Array.isArray(i.laborItems) ? i.laborItems.map((li: any) => ({
+      id: li.id ? li.id.toString() : `labor-${li.description || Math.random()}`,
+      description: li.description || "",
+      amount: (li.amount !== undefined ? li.amount : 0).toString(),
+    })) : [],
+    payments: Array.isArray(i.payments) ? i.payments.map((p: any) => ({
+      id: p.id ? p.id.toString() : `pay-${p.amount}-${p.date}`,
+      invoiceNumber: p.invoiceNumber || i.invoiceNumber,
+      method: p.method || "Cash",
+      amount: p.amount || 0,
+      reference: p.note || p.reference || "",
+      date: p.date || "",
+      createdAt: p.createdAt || "",
+      createdBy: p.createdBy || "Accountant",
+    })) : [],
+    additionalExpenses: Array.isArray(i.additionalExpenses) ? i.additionalExpenses : [],
+    expensesTotal: i.expensesTotal || 0,
+    grandTotal: i.grandTotal || 0,
+    paymentStatus: i.paymentStatus || "Unpaid",
+  };
+}
+
 function resolveJoDetail(
   joNumber: string,
   joEntry?: { id?: number; number: string; customer?: string; vehicle?: string; plate?: string; status?: string; date?: string; phone?: string; engineer?: string; customerRequest?: string },
   detailsMap?: Record<string, JoDetail>
 ): JoDetail {
-  if (detailsMap && detailsMap[joNumber]) {
+  const existing = detailsMap && detailsMap[joNumber];
+  if (existing) {
     return {
-      ...detailsMap[joNumber],
-      status: joEntry?.status ?? detailsMap[joNumber].status,
+      ...existing,
+      status: joEntry?.status ?? existing.status,
+      technicians: Array.isArray(existing.technicians) ? existing.technicians : [],
+      workFoundItems: Array.isArray(existing.workFoundItems) ? existing.workFoundItems : [],
+      approvedItems: Array.isArray(existing.approvedItems) ? existing.approvedItems : [],
+      deferredItems: Array.isArray(existing.deferredItems) ? existing.deferredItems : [],
+      issuedParts: Array.isArray(existing.issuedParts) ? existing.issuedParts : [],
+      laborItems: Array.isArray(existing.laborItems) ? existing.laborItems : [],
+      additionalExpenses: Array.isArray(existing.additionalExpenses) ? existing.additionalExpenses : [],
     };
   }
   return {
@@ -392,6 +445,9 @@ function resolveJoDetail(
     workFoundItems: [],
     approvedItems: [],
     deferredItems: [],
+    issuedParts: [],
+    laborItems: [],
+    additionalExpenses: [],
   };
 }
 
@@ -433,6 +489,14 @@ interface WPart {
   purchasePrice: number;
   sellingPrice: number;
   partType?: "Original" | "After Market" | string;
+}
+
+function normalizePartStatus(rawStatus: unknown): WPart["status"] {
+  const str = String(rawStatus || "").replace(/\s+/g, "").toLowerCase();
+  if (str === "instock") return "In Stock";
+  if (str === "lowstock") return "Low Stock";
+  if (str === "outofstock") return "Out of Stock";
+  return "In Stock";
 }
 
 interface WIssuedPart {
@@ -3002,9 +3066,18 @@ function JobOrderDetailsScreen({
   };
   const [laborItems, setLaborItems] = useState<LaborItem[]>(seedLaborItems);
   const [expenses, setExpenses] = useState<AdditionalExpense[]>(joDetail.additionalExpenses ?? []);
+
+  useEffect(() => {
+    setLaborItems(seedLaborItems());
+    setExpenses(joDetail.additionalExpenses ?? []);
+  }, [joDetail.number, joDetail.laborAmount, joDetail.additionalExpenses]);
   const [invoiceSubmitted, setInvoiceSubmitted] = useState(joDetail.invoiceCreated ?? false);
 
-  const partsTotal = issuedParts.reduce((sum, p) => sum + p.qty * (partsPriceMap[p.partId] ?? 0), 0);
+  const effectiveIssuedParts = (issuedParts && issuedParts.length > 0) ? issuedParts : (joDetail.issuedParts || []);
+  const partsTotal = joDetail.partsTotal ?? effectiveIssuedParts.reduce((sum, p) => {
+    const price = (p as any).sellingPrice ?? partsPriceMap[p.partId] ?? 0;
+    return sum + p.qty * price;
+  }, 0);
   const laborTotal = laborItems.reduce((sum, l) => { const n = parseFloat(l.amount); return sum + (isNaN(n) || n <= 0 ? 0 : n); }, 0);
   const expensesTotal = expenses.reduce((sum, e) => {
     const n = parseFloat(e.amount);
@@ -3316,7 +3389,7 @@ function JobOrderDetailsScreen({
             <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#99a1af] mb-1">Engineer</p>
             <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[16px] text-[#101828]">{joDetail.engineer}</p>
           </div>
-          {joDetail.technicians.length > 0 && (
+          {(joDetail.technicians ?? []).length > 0 && (
             <div>
               <p className="font-['Inter:Regular',sans-serif] font-normal text-[12px] text-[#99a1af] mb-1">Technicians</p>
               <div className="flex items-center gap-2">
@@ -3454,13 +3527,13 @@ function JobOrderDetailsScreen({
                       <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#008236] tracking-[0.6px] uppercase">
                         Approved Work (Customer Approved)
                       </p>
-                      <span className="text-[12px] text-[#008236] font-medium">✓ {joDetail.approvedItems.length} approved</span>
+                      <span className="text-[12px] text-[#008236] font-medium">✓ {(joDetail.approvedItems ?? []).length} approved</span>
                     </div>
-                    {joDetail.approvedItems.length === 0 ? (
+                    {(joDetail.approvedItems ?? []).length === 0 ? (
                       <p className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#99a1af] px-1">No approved work recorded.</p>
                     ) : (
-                      <div className="border border-[#bbf7d0] bg-[#f0fdf4]/50 rounded-lg overflow-hidden divide-y divide-[#bbf7d0]">
-                        {joDetail.approvedItems.map((item, i) => (
+                      <div className="border border-[#bbf7d0] bg-[#f0fdf4]/50 rounded-lg overflow-hidden divide-[#bbf7d0] divide-y">
+                        {(joDetail.approvedItems ?? []).map((item, i) => (
                           <div key={i} className="flex items-center justify-between px-4 py-3">
                             <div className="flex items-center gap-3">
                               <div className="w-4 h-4 rounded-full border-2 border-[#008236] bg-[#008236] flex items-center justify-center shrink-0">
@@ -3485,16 +3558,16 @@ function JobOrderDetailsScreen({
                   </div>
 
                   {/* Deferred Work (reference) */}
-                  {joDetail.deferredItems.length > 0 && (
+                  {(joDetail.deferredItems ?? []).length > 0 && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-amber-700 tracking-[0.6px] uppercase">
                           Deferred Work (Excluded from Invoice)
                         </p>
-                        <span className="text-[12px] text-amber-700 font-medium">⟳ {joDetail.deferredItems.length} postponed</span>
+                        <span className="text-[12px] text-amber-700 font-medium">⟳ {(joDetail.deferredItems ?? []).length} postponed</span>
                       </div>
                       <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden divide-y divide-amber-100">
-                        {joDetail.deferredItems.map((item, i) => (
+                        {(joDetail.deferredItems ?? []).map((item, i) => (
                           <div key={i} className="flex items-center justify-between px-4 py-3">
                             <div className="flex items-center gap-3">
                               <div className="w-4 h-4 rounded-full border-2 border-amber-500 bg-amber-100 flex items-center justify-center shrink-0">
@@ -3519,7 +3592,7 @@ function JobOrderDetailsScreen({
                       </p>
                       <span className="text-[12px] text-[#6a7282]">Populated strictly by Warehouse</span>
                     </div>
-                    {issuedParts.length === 0 ? (
+                    {(issuedParts ?? []).length === 0 ? (
                       <div className="bg-[#f9fafb] border border-[#e5e7eb] rounded-lg p-4 text-center">
                         <p className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#99a1af]">
                           No physical parts have been issued to this job order by the Warehouse.
@@ -3533,9 +3606,9 @@ function JobOrderDetailsScreen({
                           <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase w-24 text-right">Unit Price</span>
                           <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[11px] text-[#6a7282] tracking-[0.6px] uppercase w-24 text-right">Total</span>
                         </div>
-                        {issuedParts.map((p) => {
-                          const unitPrice = partsPriceMap[p.partId] ?? 0;
-                          const lineTotal = p.qty * unitPrice;
+                        {effectiveIssuedParts.map((p) => {
+                          const unitPrice = (p as any).sellingPrice ?? partsPriceMap[p.partId] ?? 0;
+                          const lineTotal = (p as any).total ?? (p.qty * unitPrice);
                           return (
                             <div key={p.partId} className="grid grid-cols-[1fr_auto_auto_auto] px-4 py-3 gap-4 border-b border-[#f3f4f6] last:border-0 items-center">
                               <div>
@@ -3719,7 +3792,7 @@ function JobOrderDetailsScreen({
                       <div className="space-y-2">
                         <div className="flex justify-between">
                           <span className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#6a7282]">Actual Parts Used Total</span>
-                          <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{partsTotal.toLocaleString()} EGP</span>
+                          <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{(joDetail.partsTotal ?? partsTotal).toLocaleString()} EGP</span>
                         </div>
                         {/* Labor items detailed view for closed/invoiced jobs */}
                         {(joDetail.laborItems && joDetail.laborItems.length > 0) ? (
@@ -3733,7 +3806,7 @@ function JobOrderDetailsScreen({
                             ))}
                             <div className="flex justify-between border-t border-[#f3f4f6] pt-1">
                               <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[12px] text-[#364153]">Total Labor</span>
-                              <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{joDetail.laborItems.reduce((s,l)=>{const n=parseFloat(l.amount);return s+(isNaN(n)||n<0?0:n);},0).toLocaleString()} EGP</span>
+                              <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{(joDetail.laborAmount ?? joDetail.laborItems.reduce((s,l)=>{const n=parseFloat(l.amount);return s+(isNaN(n)||n<0?0:n);},0)).toLocaleString()} EGP</span>
                             </div>
                           </div>
                         ) : (
@@ -3742,25 +3815,18 @@ function JobOrderDetailsScreen({
                             <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#364153]">{(joDetail.laborAmount ?? 0).toLocaleString()} EGP</span>
                           </div>
                         )}
-                        {(joDetail.additionalExpenses ?? expenses).length > 0 && (
+                        {((joDetail.expensesTotal ?? (joDetail.additionalExpenses ?? expenses).length) > 0) && (
                           <div className="flex justify-between">
                             <span className="font-['Inter:Regular',sans-serif] font-normal text-[13px] text-[#6a7282]">Additional Expenses</span>
                             <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-[#364153]">
-                              {(joDetail.additionalExpenses ?? expenses).reduce((s, e) => { const n = parseFloat(e.amount); return s + (isNaN(n) || n < 0 ? 0 : n); }, 0).toLocaleString()} EGP
+                              {(joDetail.expensesTotal ?? (joDetail.additionalExpenses ?? expenses).reduce((s, e) => { const n = parseFloat(e.amount); return s + (isNaN(n) || n < 0 ? 0 : n); }, 0)).toLocaleString()} EGP
                             </span>
                           </div>
                         )}
                         <div className="border-t border-[#bbf7d0] pt-2 flex justify-between">
                           <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] text-[#101828]">Grand Total</span>
                           <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[16px] text-[#0f2340]">
-                            {(() => {
-                              const savedExpenses = joDetail.additionalExpenses ?? expenses;
-                              const savedExpTotal = savedExpenses.reduce((s, e) => { const n = parseFloat(e.amount); return s + (isNaN(n) || n < 0 ? 0 : n); }, 0);
-                              const savedLaborTotal = joDetail.laborItems && joDetail.laborItems.length > 0
-                                ? joDetail.laborItems.reduce((s,l)=>{const n=parseFloat(l.amount);return s+(isNaN(n)||n<0?0:n);},0)
-                                : (joDetail.laborAmount ?? 0);
-                              return (partsTotal + savedLaborTotal + savedExpTotal).toLocaleString();
-                            })()} EGP
+                            {(joDetail.grandTotal ?? ((joDetail.partsTotal ?? partsTotal) + (joDetail.laborAmount ?? 0) + (joDetail.expensesTotal ?? 0))).toLocaleString()} EGP
                           </span>
                         </div>
                       </div>
@@ -5127,9 +5193,10 @@ function WarehouseHeader({ title, authUser }: { title: string; authUser?: { name
 
 // ─── Warehouse: Stock badge ───────────────────────────────────────────────────
 
-function WStockBadge({ status }: { status: "In Stock" | "Low Stock" | "Out of Stock" }) {
-  if (status === "In Stock") return <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-['Inter:Semi_Bold',sans-serif] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700">In Stock</span>;
-  if (status === "Low Stock") return <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-['Inter:Semi_Bold',sans-serif] font-semibold bg-amber-50 border border-amber-200 text-amber-700">Low Stock</span>;
+function WStockBadge({ status }: { status: "In Stock" | "Low Stock" | "Out of Stock" | string }) {
+  const norm = normalizePartStatus(status);
+  if (norm === "In Stock") return <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-['Inter:Semi_Bold',sans-serif] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700">In Stock</span>;
+  if (norm === "Low Stock") return <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-['Inter:Semi_Bold',sans-serif] font-semibold bg-amber-50 border border-amber-200 text-amber-700">Low Stock</span>;
   return <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-['Inter:Semi_Bold',sans-serif] font-semibold bg-red-50 border border-red-200 text-red-600">Out of Stock</span>;
 }
 
@@ -6468,16 +6535,19 @@ function WarehouseStockCountScreen({
   onAddNewPart,
 }: {
   parts: WPart[];
-  onSaveCount: (entries: StockCountEntry[]) => void;
+  onSaveCount: (entries: StockCountEntry[]) => Promise<boolean | void> | boolean | void;
   onAddNewPart: () => void;
 }) {
   const [addQtys, setAddQtys] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   function setAddQty(partId: string, val: string) {
     setAddQtys((prev) => ({ ...prev, [partId]: val }));
     setSaved(false);
+    setErrorMsg(null);
   }
 
   function getNewQty(part: WPart): number | null {
@@ -6488,13 +6558,25 @@ function WarehouseStockCountScreen({
     return part.currentQty + n;
   }
 
-  function handleSave() {
+  async function handleSave() {
     const entries: StockCountEntry[] = Object.entries(addQtys)
       .filter(([, val]) => val !== "" && parseInt(val) > 0)
       .map(([partId, val]) => ({ partId, actualQty: val, note: "" }));
-    onSaveCount(entries);
-    setAddQtys({});
-    setSaved(true);
+    if (entries.length === 0) return;
+
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const res = await onSaveCount(entries);
+      if (res !== false) {
+        setAddQtys({});
+        setSaved(true);
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to update stock count.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const filtered = parts.filter((p) => {
@@ -6516,9 +6598,10 @@ function WarehouseStockCountScreen({
           <div className="flex-1" />
           <button
             onClick={handleSave}
-            className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[14px] px-5 py-2 rounded-lg hover:bg-[#1a3560] transition-colors h-10"
+            disabled={saving}
+            className="bg-[#0f2340] text-white font-['Inter:Medium',sans-serif] font-medium text-[14px] px-5 py-2 rounded-lg hover:bg-[#1a3560] transition-colors h-10 disabled:opacity-50"
           >
-            {saved ? "✓ Saved" : "Save Count"}
+            {saving ? "Saving..." : saved ? "✓ Saved" : "Save Count"}
           </button>
           <button
             onClick={onAddNewPart}
@@ -6527,6 +6610,12 @@ function WarehouseStockCountScreen({
             + Add New Part
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] rounded-lg text-[14px]">
+            ⚠️ {errorMsg}
+          </div>
+        )}
 
         <div className="bg-white border border-[#e5e7eb] rounded-[10px] overflow-hidden">
           <table className="w-full">
@@ -8622,13 +8711,14 @@ function InvoicePaymentModal({
 }: {
   invoice: Invoice;
   onClose: () => void;
-  onConfirm: (rows: { method: InvoicePaymentMethod; amount: number; reference: string }[]) => void;
+  onConfirm: (rows: { method: InvoicePaymentMethod; amount: number; reference: string }[]) => Promise<void> | void;
 }) {
   type Row = { id: string; method: InvoicePaymentMethod; amount: string; reference: string };
   const alreadyPaid = (invoice.payments ?? []).reduce((s, p) => s + p.amount, 0);
   const remaining = invoice.grandTotal - alreadyPaid;
   const [rows, setRows] = useState<Row[]>([{ id: `row-${Date.now()}`, method: "Cash", amount: "", reference: "" }]);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const newTotal = rows.reduce((s, r) => { const n = parseFloat(r.amount); return s + (isNaN(n) || n <= 0 ? 0 : n); }, 0);
   const newTotalPaid = alreadyPaid + newTotal;
   const newRemaining = invoice.grandTotal - newTotalPaid;
@@ -8642,12 +8732,21 @@ function InvoicePaymentModal({
   function updateRow(id: string, field: keyof Omit<Row, "id">, value: string) {
     setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
   }
-  function handleConfirm() {
+  async function handleConfirm() {
+    if (isSubmitting) return;
     setError("");
     const validRows = rows.filter(r => parseFloat(r.amount) > 0);
     if (validRows.length === 0) { setError("Please add at least one payment amount greater than 0."); return; }
     if (newTotal > remaining + 0.001) { setError(`Payment exceeds remaining balance by ${(newTotal - remaining).toLocaleString(undefined, {maximumFractionDigits: 2})} EGP.`); return; }
-    onConfirm(validRows.map(r => ({ method: r.method, amount: parseFloat(r.amount), reference: r.reference.trim() })));
+    
+    setIsSubmitting(true);
+    try {
+      await onConfirm(validRows.map(r => ({ method: r.method, amount: parseFloat(r.amount), reference: r.reference.trim() })));
+    } catch (err: any) {
+      setError(err?.message || "Payment recording failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   const statusColor: Record<string, string> = { "Paid": "text-[#008236]", "Partially Paid": "text-amber-700", "Unpaid": "text-red-600" };
   return (
@@ -8677,7 +8776,7 @@ function InvoicePaymentModal({
           </div>
           {rows.map(row => (
             <div key={row.id} className="grid grid-cols-[130px_1fr_1fr_28px] gap-2 items-center">
-              <select value={row.method} onChange={e => updateRow(row.id, "method", e.target.value)}
+              <select value={row.method} onChange={e => updateRow(row.id, "method", e.target.value as InvoicePaymentMethod)}
                 className="h-9 px-2 border border-[#e5e7eb] rounded-lg font-['Inter:Regular',sans-serif] text-[13px] text-[#101828] outline-none focus:border-[#0f2340] bg-white cursor-pointer">
                 {(["Cash","Visa","InstaPay","Wallet"] as InvoicePaymentMethod[]).map(m => <option key={m}>{m}</option>)}
               </select>
@@ -8707,13 +8806,16 @@ function InvoicePaymentModal({
           </div>
         </div>
         {error && (
-          <div className="mx-6 mb-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-lg">
-            <p className="font-['Inter:Regular',sans-serif] text-[13px] text-red-600">{error}</p>
+          <div className="mx-6 mb-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+            <span className="text-red-500 font-bold text-[14px]">⚠️</span>
+            <p className="font-['Inter:Regular',sans-serif] text-[13px] text-red-600 leading-snug">{error}</p>
           </div>
         )}
         <div className="px-6 py-4 border-t border-[#e5e7eb] flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-[#e5e7eb] rounded-lg font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#364153] hover:bg-[#f9fafb] transition-colors">Cancel</button>
-          <button onClick={handleConfirm} className="flex-1 py-2.5 bg-[#0f2340] text-white rounded-lg font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] hover:bg-[#1a3560] transition-colors shadow-sm">Confirm Payment</button>
+          <button onClick={onClose} disabled={isSubmitting} className="flex-1 py-2.5 border border-[#e5e7eb] rounded-lg font-['Inter:Medium',sans-serif] font-medium text-[14px] text-[#364153] hover:bg-[#f9fafb] transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={handleConfirm} disabled={isSubmitting} className={`flex-1 py-2.5 text-white rounded-lg font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] transition-colors shadow-sm ${isSubmitting ? "bg-gray-400 cursor-not-allowed" : "bg-[#0f2340] hover:bg-[#1a3560]"}`}>
+            {isSubmitting ? "Processing..." : "Confirm Payment"}
+          </button>
         </div>
       </div>
     </div>
@@ -8723,7 +8825,7 @@ function InvoicePaymentModal({
 // ─── Accountant: Invoice Details + Print ─────────────────────────────────────
 
 function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: WorkshopSettings | null }) {
-  const validExpenses = inv.additionalExpenses.filter((e) => e.description.trim() && parseFloat(e.amount) > 0);
+  const validExpenses = (inv.additionalExpenses ?? []).filter((e) => e.description.trim() && parseFloat(e.amount) > 0);
   const invPayments = inv.payments ?? [];
   const totalPaid = invPayments.reduce((s, p) => s + p.amount, 0);
   const remaining = Math.max(0, inv.grandTotal - totalPaid);
@@ -8825,15 +8927,16 @@ function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: Workshop
             </thead>
             <tbody>
               {inv.issuedParts.map((p, i) => {
-                const unit = inv.partsPriceMap[p.partId] ?? 0;
+                const unit = (p as any).sellingPrice ?? inv.partsPriceMap[p.partId] ?? 0;
+                const lineTotal = (p as any).total ?? (p.qty * unit);
                 return (
-                  <tr key={p.partId} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                  <tr key={p.partId || i} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
                     <td style={{ ...s.td, color: "#99a1af", width: "18px" }}>{i + 1}</td>
                     <td style={{ ...s.td, fontWeight: 500 }}>{p.partName}</td>
                     <td style={{ ...s.td, fontFamily: "monospace", fontSize: "10px", color: "#6a7282" }}>{p.partNumber}</td>
                     <td style={{ ...s.tdR, width: "30px" }}>{p.qty}</td>
                     <td style={{ ...s.tdR, width: "70px" }}>{unit.toLocaleString()} EGP</td>
-                    <td style={{ ...s.tdR, fontWeight: 600, width: "75px" }}>{(p.qty * unit).toLocaleString()} EGP</td>
+                    <td style={{ ...s.tdR, fontWeight: 600, width: "75px" }}>{lineTotal.toLocaleString()} EGP</td>
                   </tr>
                 );
               })}
@@ -8858,25 +8961,10 @@ function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: Workshop
               </tr>
             </thead>
             <tbody>
-              {inv.laborItems && inv.laborItems.length > 0 ? (
-                <>
-                  {inv.laborItems.filter(l => parseFloat(l.amount) > 0).map((l, i) => (
-                    <tr key={l.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                      <td style={s.td} dir="rtl">{l.description}</td>
-                      <td style={{ ...s.tdR }}>{(parseFloat(l.amount) || 0).toLocaleString()} EGP</td>
-                    </tr>
-                  ))}
-                  <tr style={{ background: "#f3f4f6" }}>
-                    <td style={{ ...s.td, fontWeight: 600, fontSize: "11px", color: "#364153", borderTop: "1px solid #e5e7eb", borderBottom: "none" }}>Labor Total</td>
-                    <td style={{ ...s.tdR, fontWeight: 700, borderTop: "1px solid #e5e7eb", borderBottom: "none" }}>{laborTotal.toLocaleString()} EGP</td>
-                  </tr>
-                </>
-              ) : (
-                <tr>
-                  <td style={s.td}>Labor / Workmanship</td>
-                  <td style={{ ...s.tdR, fontWeight: 600 }}>{laborTotal.toLocaleString()} EGP</td>
-                </tr>
-              )}
+              <tr>
+                <td style={s.td}>Labor / Workmanship</td>
+                <td style={{ ...s.tdR, fontWeight: 600 }}>{laborTotal.toLocaleString()} EGP</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -8992,9 +9080,13 @@ function AccountantInvoiceDetailsScreen({
   const validExpenses = (invoice.additionalExpenses ?? []).filter((e) => e && e.description && e.description.trim() && parseFloat(e.amount) > 0);
   // Payment derived values
   const payments = invoice.payments ?? [];
-  const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-  const remaining = invoice.grandTotal - totalPaid;
-  const paymentStatus: string = totalPaid <= 0 ? "Unpaid" : totalPaid >= invoice.grandTotal ? "Paid" : "Partially Paid";
+  const totalPaid = invoice.paidAmount !== undefined && invoice.paidAmount > 0
+    ? invoice.paidAmount
+    : payments.reduce((s, p) => s + p.amount, 0);
+  const remaining = invoice.remainingAmount !== undefined
+    ? invoice.remainingAmount
+    : Math.max(0, (invoice.grandTotal ?? 0) - totalPaid);
+  const paymentStatus: string = invoice.paymentStatus || (totalPaid <= 0 ? "Unpaid" : totalPaid >= (invoice.grandTotal ?? 0) ? "Paid" : "Partially Paid");
   const methodTotals: Record<InvoicePaymentMethod, number> = { Cash: 0, Visa: 0, InstaPay: 0, Wallet: 0 };
   payments.forEach(p => { methodTotals[p.method] = (methodTotals[p.method] ?? 0) + p.amount; });
 
@@ -9084,15 +9176,16 @@ function AccountantInvoiceDetailsScreen({
               </thead>
               <tbody>
                 {invoice.issuedParts.map((p, i) => {
-                  const unit = invoice.partsPriceMap[p.partId] ?? 0;
+                  const unit = (p as any).sellingPrice ?? invoice.partsPriceMap[p.partId] ?? 0;
+                  const lineTotal = (p as any).total ?? (p.qty * unit);
                   return (
-                    <tr key={p.partId} className="border-b border-[#f3f4f6] last:border-0">
+                    <tr key={p.partId || i} className="border-b border-[#f3f4f6] last:border-0">
                       <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[13px] text-[#99a1af]">{i + 1}</td>
                       <td className="px-4 py-3 font-['Inter:Medium',sans-serif] font-medium text-[13px] text-[#101828]">{p.partName}</td>
                       <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[11px] text-[#6a7282]">{p.partNumber}</td>
                       <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#364153]">{p.qty}</td>
                       <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#364153]">{unit.toLocaleString()} EGP</td>
-                      <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#101828] font-semibold">{(p.qty * unit).toLocaleString()} EGP</td>
+                      <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#101828] font-semibold">{lineTotal.toLocaleString()} EGP</td>
                     </tr>
                   );
                 })}
@@ -9285,7 +9378,10 @@ function AccountantInvoiceDetailsScreen({
         <InvoicePaymentModal
           invoice={invoice}
           onClose={() => setShowPayModal(false)}
-          onConfirm={(rows) => { onRecordPayment(rows); setShowPayModal(false); }}
+          onConfirm={async (rows) => {
+            await onRecordPayment(rows);
+            setShowPayModal(false);
+          }}
         />
       )}
     </div>
@@ -14224,10 +14320,15 @@ export default function App() {
   const [activeNav, setActiveNav] = useState("dashboard");
   const [ctx, setCtx] = useState<FlowCtx>(FRESH_CTX);
 
+  // Data Loading & Error tracking states
+  const [isBackendLoading, setIsBackendLoading] = useState(false);
+  const [backendLoadErrors, setBackendLoadErrors] = useState<Record<string, string>>({});
+  const isDataLoadingRef = useRef(false);
+
   // Mutable customer/vehicle lists that can grow during the session
-  const [customers, setCustomers] = useState<Customer[]>(SEED_CUSTOMERS);
-  const [vehicleMap, setVehicleMap] = useState<Record<string, Vehicle[]>>(SEED_VEHICLES);
-  const [jobOrders, setJobOrders] = useState(SEED_JOS);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [vehicleMap, setVehicleMap] = useState<Record<string, Vehicle[]>>({});
+  const [jobOrders, setJobOrders] = useState<JoListEntry[]>([]);
 
   // Customer flow state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -14259,56 +14360,31 @@ export default function App() {
   });
 
   // Handle recording split payments against an invoice
-  function handleRecordPayment(invoiceNumber: string, rows: { method: InvoicePaymentMethod; amount: number; reference: string }[]) {
-    const today = new Date();
-    const dateStr = today.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-    const newPayments: InvoicePayment[] = rows.map((r, i) => ({
-      id: `pay-${Date.now()}-${i}`,
-      invoiceNumber,
-      method: r.method,
-      amount: r.amount,
-      reference: r.reference,
-      date: dateStr,
-      createdAt: today.toISOString(),
-      createdBy: "Accountant",
-    }));
-    setInvoices(prev => prev.map(inv => {
-      if (inv.invoiceNumber !== invoiceNumber) return inv;
-      const allPayments = [...(inv.payments ?? []), ...newPayments];
-      const totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
-      const paymentStatus: "Unpaid" | "Partially Paid" | "Paid" =
-        totalPaid <= 0 ? "Unpaid" : totalPaid >= inv.grandTotal ? "Paid" : "Partially Paid";
-      return { ...inv, payments: allPayments, paymentStatus };
-    }));
-    // Sync selectedInvoice so the details screen reflects new state immediately
-    setSelectedInvoice(prev => {
-      if (!prev || prev.invoiceNumber !== invoiceNumber) return prev;
-      const allPayments = [...(prev.payments ?? []), ...newPayments];
-      const totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
-      const paymentStatus: "Unpaid" | "Partially Paid" | "Paid" =
-        totalPaid <= 0 ? "Unpaid" : totalPaid >= prev.grandTotal ? "Paid" : "Partially Paid";
-      return { ...prev, payments: allPayments, paymentStatus };
-    });
+  async function handleRecordPayment(invoiceNumber: string, rows: { method: InvoicePaymentMethod; amount: number; reference: string }[]) {
+    for (const r of rows) {
+      await api.recordPayment({
+        invoiceNumber,
+        amount: r.amount,
+        method: r.method,
+        note: r.reference || undefined,
+      });
+    }
 
-    // Sync to backend database
-    (async () => {
-      try {
-        for (const r of rows) {
-          await api.recordPayment({
-            invoiceNumber,
-            amount: r.amount,
-            method: r.method,
-            note: r.reference || undefined,
-          });
-        }
-        const refreshed = await api.getInvoices();
-        if (Array.isArray(refreshed)) {
-          setInvoices(refreshed);
-        }
-      } catch (err) {
-        console.warn("Backend record payment error:", err);
+    // Refresh invoice list
+    const refreshedList = await api.getInvoices();
+    if (Array.isArray(refreshedList)) {
+      setInvoices(refreshedList.map((i: any) => normalizeInvoice(i)));
+    }
+
+    // Fetch full detailed invoice with complete payments and parts arrays
+    try {
+      const fullDetails = await api.getInvoiceDetails(invoiceNumber);
+      if (fullDetails) {
+        setSelectedInvoice(normalizeInvoice(fullDetails));
       }
-    })();
+    } catch (err) {
+      console.warn("Failed to reload detailed invoice after payment:", err);
+    }
   }
 
   // Technicians, Attendance & Payroll state
@@ -14374,248 +14450,396 @@ export default function App() {
     }
   }
 
-  // Load live data from Backend API & SQL Server on startup
-  useEffect(() => {
-    async function loadBackendData() {
-      try {
-        const [custs, vehs, jobs, parts, moves, invs, techs, atts, txs, branding] = await Promise.allSettled([
-          api.getCustomers(),
-          api.getVehicles(),
-          api.getJobOrders(),
-          api.getParts(),
-          api.getStockMovements(),
-          api.getInvoices(),
-          api.getTechnicians(),
-          api.getAttendanceRecords(),
-          api.getPayrollTransactions(),
-          api.getWorkshopSettings(),
-        ]);
+  // Primary backend data loader for authenticated user sessions
+  const loadBackendData = useCallback(async () => {
+    if (isDataLoadingRef.current) return;
+    isDataLoadingRef.current = true;
+    setIsBackendLoading(true);
+    const errors: Record<string, string> = {};
 
-        if (custs.status === "fulfilled" && Array.isArray(custs.value)) {
-          const mappedCusts: Customer[] = custs.value.map((c: any) => ({
-            id: c.id.toString(),
-            name: c.name,
-            phone: c.phone,
-            email: c.email || undefined,
-            address: c.address || undefined,
-            vehicleCount: c.vehicleCount || 0,
-          }));
-          setCustomers(mappedCusts);
-        }
+    const token = getAuthToken();
 
-        if (vehs.status === "fulfilled" && Array.isArray(vehs.value)) {
-          const mappedVehs = vehs.value.map((v: any) => ({
-            id: v.id.toString(),
-            make: v.make,
-            model: v.model,
-            year: v.year,
-            plate: v.plate,
-            vin: v.vin || "",
-            color: v.color || "",
-            km: v.km || "",
-            visits: v.visits || 0,
-            lastVisit: v.lastVisit || "",
-            customerId: v.customerId?.toString(),
-            customerName: v.customerName || "",
-            customerPhone: v.customerPhone || "",
-          }));
-          setVehicleList(mappedVehs);
-
-          const vMap: Record<string, Vehicle[]> = {};
-          mappedVehs.forEach((v: any) => {
-            if (v.customerId) {
-              if (!vMap[v.customerId]) vMap[v.customerId] = [];
-              vMap[v.customerId].push(v);
-            }
-          });
-          setVehicleMap(vMap);
-
-          // Populate service history for vehicles from backend
-          for (const v of mappedVehs) {
-            const vIdNum = parseInt(v.id, 10);
-            if (!isNaN(vIdNum) && vIdNum > 0) {
-              api.getVehicleById(vIdNum).then((details) => {
-                if (details && Array.isArray(details.serviceHistory)) {
-                  setServiceHistoryMap((prev) => ({
-                    ...prev,
-                    [v.id]: details.serviceHistory.map((sh: any) => ({
-                      joNumber: sh.jobOrderNumber,
-                      date: sh.date,
-                      km: sh.km || "",
-                      inspection: sh.inspection || "",
-                      status: sh.status || "Open",
-                    })),
-                  }));
-                }
-              }).catch(() => {});
-            }
-          }
-        }
-
-        if (jobs.status === "fulfilled" && Array.isArray(jobs.value)) {
-          const mappedJobs: JoListEntry[] = jobs.value.map((j: any) => ({
-            id: j.id,
-            number: j.number,
-            customer: j.customer,
-            phone: j.phone,
-            vehicle: j.vehicle,
-            plate: j.plate,
-            status: j.status,
-            date: j.date,
-            type: j.type,
-          }));
-          setJobOrders(mappedJobs);
-
-          // Update next job number dynamically
-          const nextJoNum = computeNextJobNumber(mappedJobs);
-          setCtx((prev) => ({ ...prev, joNumber: nextJoNum }));
-
-          // Populate issued parts from backend
-          for (const j of jobs.value) {
-            try {
-              const issued = await api.getIssuedParts(j.number);
-              if (Array.isArray(issued) && issued.length > 0) {
-                setWJobPartsMap((prev) => ({
-                  ...prev,
-                  [j.number]: issued.map((ip: any) => ({
-                    partId: ip.partId.toString(),
-                    partName: ip.partName,
-                    partNumber: ip.partNumber,
-                    qty: ip.qty,
-                  })),
-                }));
-                if (j.status === "Complete" || j.status === "Closed") {
-                  setWPartsConfirmedSet((prev) => new Set([...prev, j.number]));
-                }
-              }
-            } catch {}
-          }
-        }
-
-        if (parts.status === "fulfilled" && Array.isArray(parts.value)) {
-          const mappedParts: WPart[] = parts.value.map((p: any) => ({
-            id: p.id.toString(),
-            name: p.name,
-            number: p.number,
-            oem: p.oem || "",
-            brand: p.brand || "",
-            category: p.category || "General",
-            compatibleVehicles: p.compatibleVehicles || [],
-            currentQty: p.currentQty || 0,
-            minQty: p.minQty || 0,
-            location: p.location || "",
-            status: (p.status as any) || "In Stock",
-            purchasePrice: p.purchasePrice || 0,
-            sellingPrice: p.sellingPrice || 0,
-            partType: p.partType || "Original",
-          }));
-          setWParts(mappedParts);
-        }
-
-        if (moves.status === "fulfilled" && Array.isArray(moves.value)) {
-          setWMovements(moves.value);
-        }
-
-        if (invs.status === "fulfilled" && Array.isArray(invs.value)) {
-          const mappedInvs: Invoice[] = invs.value.map((i: any) => ({
-            invoiceNumber: i.invoiceNumber,
-            jobOrderNumber: i.jobOrderNumber || "",
-            date: i.date || "",
-            customerName: i.customerName || i.customer || "",
-            customerPhone: i.customerPhone || i.phone || "",
-            vehicleName: i.vehicleName || i.vehicle || "",
-            vehiclePlate: i.vehiclePlate || i.plate || "",
-            vehicleKm: i.vehicleKm || "",
-            vehicleVin: i.vehicleVin || "",
-            engineer: i.engineer || "",
-            issuedParts: i.issuedParts || [],
-            partsPriceMap: i.partsPriceMap || {},
-            partsTotal: i.partsTotal || 0,
-            laborAmount: i.laborAmount || 0,
-            laborItems: i.laborItems || [],
-            payments: i.payments || [],
-            additionalExpenses: i.additionalExpenses || [],
-            expensesTotal: i.expensesTotal || 0,
-            grandTotal: i.grandTotal || 0,
-            paymentStatus: i.paymentStatus || "Unpaid",
-          }));
-          setInvoices(mappedInvs);
-        }
-
-        if (techs.status === "fulfilled" && Array.isArray(techs.value)) {
-          setTechnicians(techs.value);
-        }
-
-        if (atts.status === "fulfilled" && Array.isArray(atts.value)) {
-          setAttendanceRecords(atts.value);
-        }
-
-        if (txs.status === "fulfilled" && Array.isArray(txs.value)) {
-          setPayrollTransactions(txs.value);
-        }
-
-        if (branding.status === "fulfilled" && branding.value && branding.value.companyName) {
-          setWorkshopSettings(branding.value);
-        }
-
-        if (getAuthToken()) {
-          try {
-            const me = await api.getMe();
-            if (me && me.fullName) {
-              const roleStr = (me.role || "").toLowerCase();
-              const validRoles: Role[] = ["engineer", "warehouse", "accountant", "owner"];
-              const targetRole: Role = validRoles.includes(roleStr as Role) ? (roleStr as Role) : "engineer";
-              setAuthUser({
-                id: me.id?.toString(),
-                name: me.fullName,
-                email: me.email,
-                role: targetRole,
-              });
-              setSelectedRole(targetRole);
-              setScreen((prev) => {
-                if (prev === "login") {
-                  return targetRole === "engineer" ? "dashboard" :
-                         targetRole === "warehouse" ? "warehouse-dashboard" :
-                         targetRole === "owner" ? "owner-dashboard" :
-                         "accountant-dashboard";
-                }
-                return prev;
-              });
-            }
-          } catch (err) {
-            console.warn("Auth token validation failed on load:", err);
-            removeAuthToken();
-            setAuthUser(null);
-            setSelectedRole(null);
-            setScreen("login");
-          }
-        }
-      } catch (err) {
-        console.error("Backend initial load error:", err);
+    // Always attempt fetching public workshop settings
+    try {
+      const branding = await api.getWorkshopSettings();
+      if (branding && branding.companyName) {
+        setWorkshopSettings(branding);
       }
-
-      // Fetch next Job Order number from backend
-      try {
-        const nextRes = await api.getNextJobOrderNumber();
-        if (nextRes && nextRes.number) {
-          setCtx((prev) => ({ ...prev, joNumber: nextRes.number }));
-        }
-      } catch {}
+    } catch (err: any) {
+      console.warn("[DataLoad] Workshop settings fetch failed:", err?.message || err);
     }
 
-    loadBackendData();
+    if (!token) {
+      console.log("[DataLoad] No auth token found. Unauthenticated session — skipping protected data fetch.");
+      setCustomers([]);
+      setVehicleList([]);
+      setVehicleMap({});
+      setJobOrders([]);
+      setWParts([]);
+      setWMovements([]);
+      setInvoices([]);
+      setTechnicians([]);
+      setAttendanceRecords([]);
+      setPayrollTransactions([]);
+      setBackendLoadErrors({});
+      setIsBackendLoading(false);
+      isDataLoadingRef.current = false;
+      return;
+    }
+
+    try {
+      const [custs, vehs, jobs, parts, moves, invs, techs, atts, txs] = await Promise.allSettled([
+        api.getCustomers(),
+        api.getVehicles(),
+        api.getJobOrders(),
+        api.getParts(),
+        api.getStockMovements(),
+        api.getInvoices(),
+        api.getTechnicians(),
+        api.getAttendanceRecords(),
+        api.getPayrollTransactions(),
+      ]);
+
+      // 1. Customers
+      if (custs.status === "fulfilled" && Array.isArray(custs.value)) {
+        const mappedCusts: Customer[] = custs.value.map((c: any) => ({
+          id: c.id.toString(),
+          name: c.name,
+          phone: c.phone,
+          email: c.email || undefined,
+          address: c.address || undefined,
+          vehicleCount: c.vehicleCount || 0,
+        }));
+        setCustomers(mappedCusts);
+      } else {
+        setCustomers([]);
+        if (custs.status === "rejected") {
+          const reason = custs.reason?.message || String(custs.reason);
+          errors.customers = reason;
+          console.warn("[DataLoad] Customers fetch failed:", reason);
+        }
+      }
+
+      // 2. Vehicles
+      if (vehs.status === "fulfilled" && Array.isArray(vehs.value)) {
+        const mappedVehs = vehs.value.map((v: any) => ({
+          id: v.id.toString(),
+          make: v.make,
+          model: v.model,
+          year: v.year,
+          plate: v.plate,
+          vin: v.vin || "",
+          color: v.color || "",
+          km: v.km || "",
+          visits: v.visits || 0,
+          lastVisit: v.lastVisit || "",
+          customerId: v.customerId?.toString(),
+          customerName: v.customerName || "",
+          customerPhone: v.customerPhone || "",
+        }));
+        setVehicleList(mappedVehs);
+
+        const vMap: Record<string, Vehicle[]> = {};
+        mappedVehs.forEach((v: any) => {
+          if (v.customerId) {
+            if (!vMap[v.customerId]) vMap[v.customerId] = [];
+            vMap[v.customerId].push(v);
+          }
+        });
+        setVehicleMap(vMap);
+
+        for (const v of mappedVehs) {
+          const vIdNum = parseInt(v.id, 10);
+          if (!isNaN(vIdNum) && vIdNum > 0) {
+            api.getVehicleById(vIdNum).then((details) => {
+              if (details && Array.isArray(details.serviceHistory)) {
+                setServiceHistoryMap((prev) => ({
+                  ...prev,
+                  [v.id]: details.serviceHistory.map((sh: any) => ({
+                    joNumber: sh.jobOrderNumber,
+                    date: sh.date,
+                    km: sh.km || "",
+                    inspection: sh.inspection || "",
+                    status: sh.status || "Open",
+                  })),
+                }));
+              }
+            }).catch(() => {});
+          }
+        }
+      } else {
+        setVehicleList([]);
+        setVehicleMap({});
+        if (vehs.status === "rejected") {
+          const reason = vehs.reason?.message || String(vehs.reason);
+          errors.vehicles = reason;
+          console.warn("[DataLoad] Vehicles fetch failed:", reason);
+        }
+      }
+
+      // 3. Job Orders
+      if (jobs.status === "fulfilled" && Array.isArray(jobs.value)) {
+        const mappedJobs: JoListEntry[] = jobs.value.map((j: any) => ({
+          id: j.id,
+          number: j.number,
+          customer: j.customer,
+          phone: j.phone,
+          vehicle: j.vehicle,
+          plate: j.plate,
+          status: j.status,
+          date: j.date,
+          type: j.type,
+        }));
+        setJobOrders(mappedJobs);
+
+        const nextJoNum = computeNextJobNumber(mappedJobs);
+        setCtx((prev) => ({ ...prev, joNumber: nextJoNum }));
+
+        for (const j of jobs.value) {
+          try {
+            const issued = await api.getIssuedParts(j.number);
+            if (Array.isArray(issued) && issued.length > 0) {
+              setWJobPartsMap((prev) => ({
+                ...prev,
+                [j.number]: issued.map((ip: any) => ({
+                  partId: ip.partId.toString(),
+                  partName: ip.partName,
+                  partNumber: ip.partNumber,
+                  qty: ip.qty,
+                })),
+              }));
+              if (j.status === "Complete" || j.status === "Closed") {
+                setWPartsConfirmedSet((prev) => new Set([...prev, j.number]));
+              }
+            }
+          } catch {}
+        }
+      } else {
+        setJobOrders([]);
+        if (jobs.status === "rejected") {
+          const reason = jobs.reason?.message || String(jobs.reason);
+          errors.jobOrders = reason;
+          console.warn("[DataLoad] Job Orders fetch failed:", reason);
+        }
+      }
+
+      // 4. Parts
+      if (parts.status === "fulfilled" && Array.isArray(parts.value)) {
+        const mappedParts: WPart[] = parts.value.map((p: any) => ({
+          id: p.id.toString(),
+          name: p.name,
+          number: p.number,
+          oem: p.oem || "",
+          brand: p.brand || "",
+          category: p.category || "General",
+          compatibleVehicles: p.compatibleVehicles || [],
+          currentQty: p.currentQty || 0,
+          minQty: p.minQty || 0,
+          location: p.location || "",
+          status: normalizePartStatus(p.status),
+          purchasePrice: p.purchasePrice || 0,
+          sellingPrice: p.sellingPrice || 0,
+          partType: p.partType || "Original",
+        }));
+        setWParts(mappedParts);
+      } else {
+        setWParts([]);
+        if (parts.status === "rejected") {
+          const reason = parts.reason?.message || String(parts.reason);
+          errors.parts = reason;
+          console.warn("[DataLoad] Parts fetch failed (e.g. role authorization restriction):", reason);
+        }
+      }
+
+      // 5. Stock Movements
+      if (moves.status === "fulfilled" && Array.isArray(moves.value)) {
+        setWMovements(moves.value);
+      } else {
+        setWMovements([]);
+        if (moves.status === "rejected") {
+          const reason = moves.reason?.message || String(moves.reason);
+          errors.movements = reason;
+          console.warn("[DataLoad] Stock Movements fetch failed:", reason);
+        }
+      }
+
+      // 6. Invoices
+      if (invs.status === "fulfilled" && Array.isArray(invs.value)) {
+        const mappedInvs: Invoice[] = invs.value.map((i: any) => normalizeInvoice(i));
+        setInvoices(mappedInvs);
+      } else {
+        setInvoices([]);
+        if (invs.status === "rejected") {
+          const reason = invs.reason?.message || String(invs.reason);
+          errors.invoices = reason;
+          console.warn("[DataLoad] Invoices fetch failed:", reason);
+        }
+      }
+
+      // 7. Technicians
+      if (techs.status === "fulfilled" && Array.isArray(techs.value)) {
+        setTechnicians(techs.value);
+      } else {
+        setTechnicians([]);
+        if (techs.status === "rejected") {
+          const reason = techs.reason?.message || String(techs.reason);
+          errors.technicians = reason;
+          console.warn("[DataLoad] Technicians fetch failed:", reason);
+        }
+      }
+
+      // 8. Attendance Records
+      if (atts.status === "fulfilled" && Array.isArray(atts.value)) {
+        setAttendanceRecords(atts.value);
+      } else {
+        setAttendanceRecords([]);
+        if (atts.status === "rejected") {
+          const reason = atts.reason?.message || String(atts.reason);
+          errors.attendance = reason;
+          console.warn("[DataLoad] Attendance records fetch failed:", reason);
+        }
+      }
+
+      // 9. Payroll Transactions
+      if (txs.status === "fulfilled" && Array.isArray(txs.value)) {
+        setPayrollTransactions(txs.value);
+      } else {
+        setPayrollTransactions([]);
+        if (txs.status === "rejected") {
+          const reason = txs.reason?.message || String(txs.reason);
+          errors.payroll = reason;
+          console.warn("[DataLoad] Payroll transactions fetch failed:", reason);
+        }
+      }
+    } catch (err: any) {
+      console.error("[DataLoad] Critical load error:", err);
+    } finally {
+      setBackendLoadErrors(errors);
+      setIsBackendLoading(false);
+      isDataLoadingRef.current = false;
+    }
+
+    try {
+      const nextRes = await api.getNextJobOrderNumber();
+      if (nextRes && nextRes.number) {
+        setCtx((prev) => ({ ...prev, joNumber: nextRes.number }));
+      }
+    } catch {}
   }, []);
 
-  // Ensure workshop branding is fresh whenever role changes / after login
+  // Initial startup mount effect: Validate token if present & load backend data
+  useEffect(() => {
+    let isMounted = true;
+    async function initAuthAndData() {
+      const token = getAuthToken();
+      if (token) {
+        try {
+          const me = await api.getMe();
+          if (isMounted && me && me.fullName) {
+            const roleStr = (me.role || "").toLowerCase();
+            const validRoles: Role[] = ["engineer", "warehouse", "accountant", "owner"];
+            const targetRole: Role = validRoles.includes(roleStr as Role) ? (roleStr as Role) : "engineer";
+            setAuthUser({
+              id: me.id?.toString(),
+              name: me.fullName,
+              email: me.email,
+              role: targetRole,
+            });
+            setSelectedRole(targetRole);
+            setScreen((prev) => {
+              if (prev === "login") {
+                return targetRole === "engineer" ? "dashboard" :
+                       targetRole === "warehouse" ? "warehouse-dashboard" :
+                       targetRole === "owner" ? "owner-dashboard" :
+                       "accountant-dashboard";
+              }
+              return prev;
+            });
+            await loadBackendData();
+          }
+        } catch (err) {
+          console.warn("[Auth] Startup token validation failed:", err);
+          removeAuthToken();
+          setAuthUser(null);
+          setSelectedRole(null);
+          setScreen("login");
+          await loadBackendData();
+        }
+      } else {
+        await loadBackendData();
+      }
+    }
+    initAuthAndData();
+    return () => { isMounted = false; };
+  }, [loadBackendData]);
+
+  // Ensure workshop branding is fresh and setup SignalR cross-session synchronization
   useEffect(() => {
     if (selectedRole) {
+      setupSignalRSync(() => {
+        loadBackendData();
+        // If an Invoice Details screen is currently active, refresh its full detail state safely
+        setSelectedInvoice((prev) => {
+          if (prev && prev.invoiceNumber) {
+            api.getInvoiceDetails(prev.invoiceNumber)
+              .then((fullDetails) => {
+                if (fullDetails && fullDetails.invoiceNumber) {
+                  setSelectedInvoice(normalizeInvoice(fullDetails));
+                }
+              })
+              .catch(() => {});
+          }
+          return prev;
+        });
+        // If a Job Order Details screen is currently active, refresh its full detail state safely
+        setSelectedJobOrder((prev) => {
+          if (prev && prev.number) {
+            api.getAccountantJobDetails(prev.number)
+              .then((acctDetail) => {
+                if (acctDetail && acctDetail.number) {
+                  setSelectedJobOrder((curr) => {
+                    if (!curr || curr.number !== acctDetail.number) return curr;
+                    return {
+                      ...curr,
+                      laborAmount: acctDetail.laborAmount ?? curr.laborAmount,
+                      laborItems: Array.isArray(acctDetail.laborItems) ? acctDetail.laborItems.map((li: any) => ({
+                        id: li.id ? li.id.toString() : `labor-${li.description || Math.random()}`,
+                        description: li.description || "",
+                        amount: (li.amount !== undefined ? li.amount : 0).toString(),
+                      })) : (curr.laborItems || []),
+                      issuedParts: Array.isArray(acctDetail.issuedParts) ? acctDetail.issuedParts.map((ip: any) => ({
+                        partId: ip.partId?.toString() || "",
+                        partName: ip.partName || "",
+                        partNumber: ip.partNumber || "",
+                        qty: ip.qty || 0,
+                        sellingPrice: ip.sellingPrice || 0,
+                        total: ip.total || 0,
+                      })) : (curr.issuedParts || []),
+                      additionalExpenses: Array.isArray(acctDetail.additionalExpenses) ? acctDetail.additionalExpenses : (curr.additionalExpenses || []),
+                      partsTotal: acctDetail.partsTotal,
+                      expensesTotal: acctDetail.expensesTotal,
+                      grandTotal: acctDetail.grandTotal,
+                      hasInvoice: acctDetail.hasInvoice ?? (curr.status === "Closed"),
+                      invoiceNumber: acctDetail.invoiceNumber || curr.invoiceNumber,
+                      invoiceCreated: acctDetail.hasInvoice ?? (curr.status === "Closed"),
+                    };
+                  });
+                }
+              })
+              .catch(() => {});
+          }
+          return prev;
+        });
+      });
       api.getWorkshopSettings().then((data) => {
         if (data && data.companyName) {
           setWorkshopSettings(data);
         }
       }).catch(() => {});
+    } else {
+      stopSignalRSync();
     }
-  }, [selectedRole]);
+  }, [selectedRole, loadBackendData]);
 
   const warehouseJobs: WJob[] = jobOrders.map((jo) => {
     const detail = joDetails[jo.number];
@@ -14684,7 +14908,8 @@ export default function App() {
       location: part.location || null,
       compatibleVehicles: part.compatibleVehicles,
     };
-    if (isOwnerRole) {
+    const canManagePrices = isOwnerRole || selectedRole === "accountant";
+    if (canManagePrices) {
       payload.purchasePrice = part.purchasePrice;
       payload.sellingPrice = part.sellingPrice;
     }
@@ -14694,32 +14919,34 @@ export default function App() {
       savedPart = {
         ...part,
         id: res.id.toString(),
-        purchasePrice: isOwnerRole ? part.purchasePrice : 0,
-        sellingPrice: isOwnerRole ? part.sellingPrice : 0,
+        status: normalizePartStatus(res.status ?? part.status),
+        purchasePrice: canManagePrices ? (res.purchasePrice ?? part.purchasePrice) : 0,
+        sellingPrice: canManagePrices ? (res.sellingPrice ?? part.sellingPrice) : 0,
       };
     }
     setWParts((prev) => [...prev, savedPart]);
   }
 
-  async function handleWSaveCount(entries: StockCountEntry[]) {
+  async function handleWSaveCount(entries: StockCountEntry[]): Promise<boolean> {
     const today = new Date();
     const dateStr = today.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).replace(",", "");
     const newMovements: WMovement[] = [];
 
-    // Backend sync
-    try {
-      const items = entries
-        .map((e) => ({
-          partId: parseInt(e.partId, 10),
-          actualQty: parseInt(e.actualQty, 10),
-        }))
-        .filter((i) => !isNaN(i.partId) && !isNaN(i.actualQty) && i.actualQty > 0);
+    const items = entries
+      .map((e) => ({
+        partId: parseInt(e.partId, 10),
+        actualQty: parseInt(e.actualQty, 10),
+      }))
+      .filter((i) => !isNaN(i.partId) && !isNaN(i.actualQty) && i.actualQty > 0);
 
-      if (items.length > 0) {
-        await api.updateStockCount({ items });
-      }
-    } catch (err) {
-      console.warn("Could not sync stock count with backend API:", err);
+    if (items.length === 0) return true;
+
+    // Backend sync — send array directly
+    try {
+      await api.updateStockCount(items);
+    } catch (err: any) {
+      console.error("Stock count API update failed:", err);
+      throw new Error(err?.message || "Failed to update stock count on server.");
     }
 
     setWParts((prev) =>
@@ -14745,6 +14972,7 @@ export default function App() {
     if (newMovements.length > 0) {
       setWMovements((prev) => [...newMovements, ...prev]);
     }
+    return true;
   }
 
   async function handleWConfirmIssue() {
@@ -14862,37 +15090,111 @@ export default function App() {
   async function handleOpenJobOrder(joNumber: string, backTarget: Screen) {
     const jo = jobOrders.find((j) => j.number === joNumber);
     let detail = resolveJoDetail(joNumber, jo, joDetails);
+
+    // 1. Fetch full accountant job details for complete parts, expenses, and financial snapshot
+    try {
+      const acctDetail = await api.getAccountantJobDetails(joNumber);
+      if (acctDetail && acctDetail.number) {
+        detail = {
+          ...detail,
+          id: acctDetail.id ?? detail.id,
+          number: acctDetail.number,
+          date: acctDetail.date || detail.date,
+          status: acctDetail.status || detail.status,
+          type: acctDetail.type || detail.type,
+          customerName: acctDetail.customerName || detail.customerName,
+          customerPhone: acctDetail.customerPhone || detail.customerPhone,
+          vehicleName: acctDetail.vehicleName || detail.vehicleName,
+          vehiclePlate: acctDetail.vehiclePlate || detail.vehiclePlate,
+          vehicleKm: acctDetail.vehicleKm || detail.vehicleKm,
+          vehicleVin: acctDetail.vehicleVin || detail.vehicleVin,
+          engineer: acctDetail.engineer || detail.engineer,
+          customerRequest: acctDetail.customerRequest || detail.customerRequest,
+          laborAmount: acctDetail.laborAmount ?? detail.laborAmount,
+          laborItems: Array.isArray(acctDetail.laborItems) ? acctDetail.laborItems.map((li: any) => ({
+            id: li.id ? li.id.toString() : `labor-${li.description || Math.random()}`,
+            description: li.description || "",
+            amount: (li.amount !== undefined ? li.amount : 0).toString(),
+          })) : (detail.laborItems || []),
+          workFoundItems: Array.isArray(acctDetail.workFoundItems) ? acctDetail.workFoundItems : (detail.workFoundItems || []),
+          approvedItems: Array.isArray(acctDetail.approvedItems) && acctDetail.approvedItems.length > 0 ? acctDetail.approvedItems : (detail.approvedItems || []),
+          deferredItems: Array.isArray(acctDetail.deferredItems) && acctDetail.deferredItems.length > 0 ? acctDetail.deferredItems : (detail.deferredItems || []),
+          issuedParts: Array.isArray(acctDetail.issuedParts) ? acctDetail.issuedParts.map((ip: any) => ({
+            partId: ip.partId?.toString() || "",
+            partName: ip.partName || "",
+            partNumber: ip.partNumber || "",
+            qty: ip.qty || 0,
+            sellingPrice: ip.sellingPrice || 0,
+            total: ip.total || 0,
+          })) : (detail.issuedParts || []),
+          additionalExpenses: Array.isArray(acctDetail.additionalExpenses) ? acctDetail.additionalExpenses : (detail.additionalExpenses || []),
+          partsTotal: acctDetail.partsTotal,
+          expensesTotal: acctDetail.expensesTotal,
+          grandTotal: acctDetail.grandTotal,
+          hasInvoice: acctDetail.hasInvoice ?? (detail.status === "Closed"),
+          invoiceNumber: acctDetail.invoiceNumber || detail.invoiceNumber,
+          invoiceCreated: acctDetail.hasInvoice ?? (detail.status === "Closed"),
+        };
+      }
+    } catch {}
+
+    // 2. Fetch live engineer job order notes and work progress
     try {
       const live = await api.getJobOrderByNumber(joNumber);
       if (live && live.number) {
         detail = {
           ...detail,
-          id: live.id ?? detail.id,
-          number: live.number,
-          date: live.date || detail.date,
-          status: live.status || detail.status,
-          type: live.type || detail.type,
-          customerId: live.customerId ? live.customerId.toString() : detail.customerId,
-          customerName: live.customerName || detail.customerName,
-          customerPhone: live.customerPhone || detail.customerPhone,
-          vehicleId: live.vehicleId ? live.vehicleId.toString() : detail.vehicleId,
-          vehicleName: live.vehicleName || detail.vehicleName,
-          vehiclePlate: live.vehiclePlate || detail.vehiclePlate,
-          vehicleKm: live.vehicleKm || detail.vehicleKm,
-          vehicleVin: live.vehicleVin || detail.vehicleVin,
-          engineer: live.engineer || detail.engineer,
-          customerRequest: live.customerRequest || detail.customerRequest,
           requiredWork: live.requiredWork ?? detail.requiredWork ?? live.customerRequest ?? detail.customerRequest,
           completedWork: live.completedWork ?? detail.completedWork,
-          approvedItems: live.approvedItems ?? detail.approvedItems,
-          deferredItems: live.deferredItems ?? detail.deferredItems,
+          notes: live.notes ?? detail.notes,
+          technicians: Array.isArray(live.technicians) ? live.technicians : (detail.technicians || []),
+          partsTotal: live.partsTotal ?? detail.partsTotal,
+          expensesTotal: live.expensesTotal ?? detail.expensesTotal,
+          grandTotal: live.grandTotal ?? detail.grandTotal,
+          hasInvoice: live.hasInvoice ?? detail.hasInvoice,
+          invoiceNumber: live.invoiceNumber ?? detail.invoiceNumber,
+          issuedParts: Array.isArray(live.issuedParts) && live.issuedParts.length > 0 ? live.issuedParts.map((ip: any) => ({
+            partId: ip.partId?.toString() || "",
+            partName: ip.partName || "",
+            partNumber: ip.partNumber || "",
+            qty: ip.qty || 0,
+            sellingPrice: ip.sellingPrice || 0,
+            total: ip.total || 0,
+          })) : detail.issuedParts,
         };
       }
     } catch {}
+
     setJoDetails((prev) => ({ ...prev, [joNumber]: detail }));
     setSelectedJobOrder(detail);
     setJoDetailsBackTarget(backTarget);
     setScreen("job-order-details");
+  }
+
+  const [openingInvoiceNum, setOpeningInvoiceNum] = useState<string | null>(null);
+  const [invoiceLoadError, setInvoiceLoadError] = useState<string | null>(null);
+
+  async function handleOpenInvoice(invOrNum: Invoice | string) {
+    const invNumber = typeof invOrNum === "string" ? invOrNum : invOrNum?.invoiceNumber;
+    if (!invNumber) return;
+    setOpeningInvoiceNum(invNumber);
+    setInvoiceLoadError(null);
+
+    try {
+      const fullDetails = await api.getInvoiceDetails(invNumber);
+      if (fullDetails && fullDetails.invoiceNumber) {
+        setSelectedInvoice(normalizeInvoice(fullDetails));
+        setScreen("accountant-invoice-details");
+        setActiveNav("accountant-invoices");
+      } else {
+        setInvoiceLoadError(`Failed to load invoice details for ${invNumber}.`);
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch detailed invoice:", err);
+      setInvoiceLoadError(err?.message || `Failed to load invoice details for ${invNumber}.`);
+    } finally {
+      setOpeningInvoiceNum(null);
+    }
   }
 
   async function startNewJobOrder() {
@@ -15363,12 +15665,26 @@ export default function App() {
       setScreen("accountant-dashboard");
       setActiveNav("accountant-dashboard");
     }
+    // Re-trigger live backend data fetch for the newly authenticated session
+    loadBackendData();
   }
 
   function handleSignOut() {
     removeAuthToken();
     setSelectedRole(null);
     setAuthUser(null);
+    setCustomers([]);
+    setVehicleList([]);
+    setVehicleMap({});
+    setJobOrders([]);
+    setJoDetails({});
+    setWParts([]);
+    setWMovements([]);
+    setInvoices([]);
+    setTechnicians([]);
+    setAttendanceRecords([]);
+    setPayrollTransactions([]);
+    setBackendLoadErrors({});
     setScreen("login");
     setActiveNav("dashboard");
     setWActiveNav("warehouse-dashboard");
@@ -15893,15 +16209,11 @@ export default function App() {
           wJobPartsMap={wJobPartsMap}
           wParts={wParts}
           onReviewJob={(jo) => {
-            setSelectedJobOrder(jo);
-            setJoDetailsBackTarget("accountant-dashboard");
-            setScreen("job-order-details");
+            handleOpenJobOrder(jo.number, "accountant-dashboard");
             setActiveNav("accountant-dashboard");
           }}
           onViewInvoice={(inv) => {
-            setSelectedInvoice(inv);
-            setScreen("accountant-invoice-details");
-            setActiveNav("accountant-invoices");
+            handleOpenInvoice(inv);
           }}
           onNavToInvoices={(filter) => {
             setInvoicesFilter(filter);
@@ -15926,9 +16238,7 @@ export default function App() {
           joDetails={joDetails}
           initialFilter={jobsStatusFilter}
           onSelectJo={(jo) => {
-            setSelectedJobOrder(jo);
-            setJoDetailsBackTarget("accountant-jobs");
-            setScreen("job-order-details");
+            handleOpenJobOrder(jo.number, "accountant-jobs");
             setActiveNav("accountant-jobs");
           }}
         />
@@ -15939,9 +16249,7 @@ export default function App() {
           invoices={invoices}
           initialFilter={invoicesFilter}
           onViewInvoice={(inv) => {
-            setSelectedInvoice(inv);
-            setScreen("accountant-invoice-details");
-            setActiveNav("accountant-invoices");
+            handleOpenInvoice(inv);
           }}
         />
       )}
@@ -15952,12 +16260,7 @@ export default function App() {
           settings={workshopSettings}
           onBack={() => { setScreen("accountant-invoices"); setActiveNav("accountant-invoices"); }}
           onOpenJobOrder={(joNum) => {
-            const detail = joDetails[joNum];
-            if (detail) {
-              setSelectedJobOrder(detail);
-              setJoDetailsBackTarget("accountant-invoice-details");
-              setScreen("job-order-details");
-            }
+            handleOpenJobOrder(joNum, "accountant-invoice-details");
           }}
           onRecordPayment={(rows) => handleRecordPayment(selectedInvoice.invoiceNumber, rows)}
         />
@@ -16163,9 +16466,7 @@ export default function App() {
           jobOrders={jobOrders}
           joDetails={joDetails}
           onSelectJo={(jo) => {
-            setSelectedJobOrder(jo);
-            setJoDetailsBackTarget("job-orders-list");
-            setScreen("job-order-details");
+            handleOpenJobOrder(jo.number, "job-orders-list");
             setActiveNav("job-orders");
           }}
           onNewJobOrder={startNewJobOrder}
@@ -16176,7 +16477,7 @@ export default function App() {
         <JobOrderDetailsScreen
           joDetail={selectedJobOrder}
           role={selectedRole ?? undefined}
-          issuedParts={wJobPartsMap[selectedJobOrder.number] ?? []}
+          issuedParts={selectedJobOrder.issuedParts && selectedJobOrder.issuedParts.length > 0 ? selectedJobOrder.issuedParts : (wJobPartsMap[selectedJobOrder.number] ?? [])}
           partsPriceMap={Object.fromEntries(wParts.map((p) => [p.id, p.sellingPrice]))}
           parts={wParts}
           workshopSettings={workshopSettings}
@@ -16234,14 +16535,23 @@ export default function App() {
             });
             api.createInvoice(selectedJobOrder.number, {
               laborAmount,
+              laborItems: validLaborItems.map((l, index) => ({
+                description: l.description,
+                amount: parseFloat(l.amount) || 0,
+                sortOrder: index + 1,
+              })),
               additionalExpenses: validExp.map((e) => ({
                 description: e.description,
                 amount: parseFloat(e.amount) || 0,
               })),
-            }).then(() => {
+            }).then(async (createdDto) => {
               api.getInvoices().then((invs) => {
                 if (Array.isArray(invs)) setInvoices(invs);
               }).catch(() => {});
+              if (createdDto && createdDto.invoiceNumber) {
+                const fullDetails = await api.getInvoiceDetails(createdDto.invoiceNumber);
+                if (fullDetails) setSelectedInvoice(normalizeInvoice(fullDetails));
+              }
             }).catch((err) => {
               console.warn("Backend create invoice error:", err);
             });
@@ -16251,10 +16561,17 @@ export default function App() {
             setActiveNav("accountant-invoices");
           }}
           onSaveWorkFound={(items) => {
-            api.saveWorkFound(
-              selectedJobOrder.number,
-              items.map((i) => ({ description: i.description, approved: i.approved }))
-            ).catch((err) => {
+            const payloadItems = items.map((i) => {
+              const formattedNote = i.selectedPart
+                ? `${i.selectedPart.brand} (${i.selectedPart.partType || "Part"}) · ${i.selectedPart.sellingPrice.toLocaleString()} EGP [Qty: ${i.selectedPart.qty}]`
+                : i.note || "";
+              return {
+                description: i.description,
+                note: formattedNote,
+                approved: i.approved,
+              };
+            });
+            api.saveWorkFound(selectedJobOrder.number, payloadItems).catch((err) => {
               console.warn("Backend save work found error:", err);
             });
             const approved = items.filter((i) => i.approved).map((i) => ({
@@ -16456,7 +16773,7 @@ export default function App() {
             setWPartBackTarget("accountant-parts");
             setScreen("warehouse-part-details");
           }}
-          onAddNewPart={() => {}}
+          onAddNewPart={() => setWarehouseModal("add-new-part")}
         />
       )}
 
@@ -16466,7 +16783,15 @@ export default function App() {
           movements={wMovements}
           onBack={() => { setScreen(wPartBackTarget); setWActiveNav(wPartBackTarget); }}
           role={selectedRole ?? undefined}
-          onSavePrices={(partId, purchasePrice, sellingPrice) => {
+          onSavePrices={async (partId, purchasePrice, sellingPrice) => {
+            try {
+              const pIdNum = parseInt(partId, 10);
+              if (!isNaN(pIdNum)) {
+                await api.updatePartPrices(pIdNum, { purchasePrice, sellingPrice });
+              }
+            } catch (err) {
+              console.warn("Failed to persist price update to backend API:", err);
+            }
             setWParts((prev) => prev.map((p) => p.id === partId ? { ...p, purchasePrice, sellingPrice } : p));
             setWSelectedPart((prev) => prev && prev.id === partId ? { ...prev, purchasePrice, sellingPrice } : prev);
           }}
@@ -16709,7 +17034,7 @@ export default function App() {
         <AddNewPartModal
           onClose={() => setWarehouseModal(null)}
           onSave={handleWAddNewPart}
-          isOwner={isOwnerRole}
+          isOwner={isOwnerRole || selectedRole === "accountant"}
         />
       )}
 

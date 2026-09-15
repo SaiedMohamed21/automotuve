@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Payroll;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Payroll;
 
 namespace StarAutoCenter.Controllers.Payroll
@@ -11,10 +13,12 @@ namespace StarAutoCenter.Controllers.Payroll
     public class PayrollController : ControllerBase
     {
         private readonly IPayrollService _payrollService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public PayrollController(IPayrollService payrollService)
+        public PayrollController(IPayrollService payrollService, IHubContext<DataSyncHub> hubContext)
         {
             _payrollService = payrollService;
+            _hubContext = hubContext;
         }
 
         // ── Technicians ──
@@ -41,6 +45,7 @@ namespace StarAutoCenter.Controllers.Payroll
                 return BadRequest(new { message = "Technician name is required" });
 
             var result = await _payrollService.CreateTechnicianAsync(dto);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Payroll");
             return CreatedAtAction(nameof(GetTechnicianById), new { id = result.Id }, result);
         }
 
@@ -49,6 +54,7 @@ namespace StarAutoCenter.Controllers.Payroll
         {
             var result = await _payrollService.UpdateTechnicianAsync(id, dto);
             if (result == null) return NotFound(new { message = "Technician not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Payroll");
             return Ok(result);
         }
 
@@ -57,6 +63,7 @@ namespace StarAutoCenter.Controllers.Payroll
         {
             var success = await _payrollService.DeleteTechnicianAsync(id);
             if (!success) return NotFound(new { message = "Technician not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Payroll");
             return NoContent();
         }
 
@@ -81,6 +88,7 @@ namespace StarAutoCenter.Controllers.Payroll
             try
             {
                 var result = await _payrollService.MarkAttendanceAsync(dto);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Payroll");
                 return Ok(result);
             }
             catch (InvalidOperationException ex)
@@ -107,6 +115,7 @@ namespace StarAutoCenter.Controllers.Payroll
             try
             {
                 var result = await _payrollService.RecordPayrollTransactionAsync(dto);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Payroll");
                 return Ok(result);
             }
             catch (InvalidOperationException ex)
@@ -120,6 +129,7 @@ namespace StarAutoCenter.Controllers.Payroll
         {
             var success = await _payrollService.DeletePayrollTransactionAsync(id);
             if (!success) return NotFound(new { message = "Transaction not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Payroll");
             return NoContent();
         }
     }

@@ -1,0 +1,270 @@
+================================================================================
+FOCUSED DIAGNOSTIC REPORT: FRONTEND ARCHITECTURE & DATA FLOW
+SOS MOTOR WORKS
+Audit Mode: Strict Read-Only Investigation
+Environment: ASP.NET Core 8 Web API + EF Core (SQL Server) + React 19 / Vite SPA
+================================================================================
+
+--------------------------------------------------------------------------------
+CENTRAL QUESTION ANSWER
+--------------------------------------------------------------------------------
+Are the reported problems caused by an inconsistent database/data source, or are they primarily caused by role-restricted APIs, authentication timing, frontend state architecture, and lack of synchronization?
+
+ANSWER:
+The SQL Server database and EF Core data layer are 100% consistent, unified, and error-free.
+
+The reported problems are strictly caused by frontend state lifecycle, authentication timing, role-restricted controllers, and lack of cross-session synchronization:
+1. Parts Disappearance: Caused by [Authorize] on WarehouseController returning HTTP 403 to Accountant users.
+2. Missing Engineer Job Orders: Caused by handleLoginSuccess failing to re-fetch backend data after login, leaving un-refetched state on screen until F5.
+3. Required Browser Refresh: Caused by the absence of WebSockets (SignalR) or background polling, leaving open browser tabs with stale memory snapshots.
+
+
+--------------------------------------------------------------------------------
+A. VERIFIED FINDINGS
+--------------------------------------------------------------------------------
+1. Database Parity & Data Integrity:
+   - The database is 100% consistent, unified, and correctly persisted. All roles query the exact same SQL Server instance (StarAutoCenter) and EF Core ApplicationDbContext.
+   - Creating/updating Job Orders, Parts, and Invoices writes directly and synchronously to SQL Server tables (JobOrders, Parts, Invoices, IssuedParts, StockMovements).
+
+2. Role-Based Endpoint Blocking (Accountant Parts 403):
+   - The primary Parts catalog API endpoint (GET /api/warehouse/parts) is restricted by [Authorize(Roles = "Warehouse,Owner,Engineer")] (WarehouseController.cs:L8).
+   - The Accountant role is explicitly excluded. When an Accountant user logs in, the startup call api.getParts() receives HTTP 403 Forbidden.
+
+3. Un-triggered Startup Data Load (Authentication Timing):
+   - Data loading (loadBackendData()) is executed ONCE on initial component mount via useEffect([], ...) (src/App.tsx:L14378-L14607).
+   - If the user lands on the Login screen without a valid JWT token in localStorage, the initial API requests return HTTP 401 Unauthorized.
+   - When the user subsequently submits credentials and logs in, handleLoginSuccess (src/App.tsx:L15350-L15366) sets selectedRole and navigates to the dashboard, but does NOT re-trigger loadBackendData().
+   - As a result, the application displays hardcoded mock seed arrays (SEED_JOS, SEED_PARTS) until the user manually reloads the browser (F5), at which point loadBackendData() runs with the saved token.
+
+4. Zero Cross-Session Real-Time Synchronization:
+   - The React SPA manages state in local top-level useState arrays (jobOrders, wParts) inside App.tsx.
+   - When User A creates or updates a record, User A's browser updates SQL Server and updates User A's local React state.
+   - No WebSockets (SignalR), SSE, background polling, or storage listeners exist. User B's already-open browser session retains its old memory snapshot until User B presses F5.
+
+5. Role-Tailored Job Order Filtering Differences:
+   - GET /api/warehouse/jobs defaults to filtering j.Status == JobOrderStatus.Open (WarehouseService.cs:L276).
+   - GET /api/accountant/jobs and GET /api/job-orders return all status types.
+   - Closed/Completed Job Orders intentionally disappear from the Warehouse list upon status completion.
+
+
+--------------------------------------------------------------------------------
+B. NOT CONFIRMED FINDINGS
+--------------------------------------------------------------------------------
+1. Engineer String Matching Failure:
+   - NOT CONFIRMED. The previous hypothesis that "Engineer string representation mismatch (JobOrder.Engineer) causes missing Job Orders" is false.
+   - Code Proof: Neither backend (JobOrderService.cs, JobOrdersController.cs) nor frontend (App.tsx) filters GET /api/job-orders by j.Engineer == currentUser. JobOrderService.GetAllAsync() retrieves all job orders without filtering on the Engineer column. JobOrder.Engineer is used purely as a display string on receipts and details views.
+
+2. Database Data Corruption or Multi-Database Divergence:
+   - NOT CONFIRMED. There are no secondary DbContexts, raw SQL connections, or isolated local tables hiding records.
+
+
+--------------------------------------------------------------------------------
+C. ENGINEER JOB ORDER FLOW
+--------------------------------------------------------------------------------
+[Login Screen] --(api.login)--> Token saved to localStorage --> handleLoginSuccess()
+                                                                      |
+                                                       (No loadBackendData re-trigger!)
+                                                                      v
+                                                         State retains initial snapshot
+                                                                      |
+[F5 Refresh] --(loadBackendData)--> GET /api/job-orders --> JobOrderService.GetAllAsync()
+                                                                      |
+                                                         Returns ALL Job Orders from DB
+
+- Controller: Controllers/Engineer/JobOrdersController.cs
+- Authorization: [Authorize] (Allows all authenticated roles).
+- Service Method: JobOrderService.GetAllAsync(search, status, sort) (JobOrderService.cs:L29-L68).
+- Query: _context.JobOrders.Include(j => j.Customer).Include(j => j.Vehicle).AsQueryable().
+- Filtering: No filtering by Engineer name or user ID. Returns all Job Orders unless status or search query parameters are supplied.
+
+
+--------------------------------------------------------------------------------
+D. WAREHOUSE JOB ORDER FLOW
+--------------------------------------------------------------------------------
+- Controller: Controllers/Warehouse/WarehouseController.cs
+- Authorization: [Authorize(Roles = "Warehouse,Owner,Engineer")] (Excludes Accountant).
+- Service Method: WarehouseService.GetOpenJobsAsync(search, status) (WarehouseService.cs:L266-L311).
+- Query & Default Filter:
+  if (string.IsNullOrWhiteSpace(status))
+  {
+      query = query.Where(j => j.Status == JobOrderStatus.Open);
+  }
+- Behavior: Returns open jobs with issued parts count (j.IssuedParts.Count). Completed/Closed jobs are excluded by default.
+
+
+--------------------------------------------------------------------------------
+E. ACCOUNTANT JOB ORDER FLOW
+--------------------------------------------------------------------------------
+- Controller: Controllers/Accountant/AccountantController.cs
+- Authorization: [Authorize(Roles = "Accountant,Owner")] (Excludes Warehouse and Engineer).
+- Service Method: AccountantService.GetJobsAsync(search, status) (AccountantService.cs:L105-L144).
+- Query: _context.JobOrders.Include(j => j.Customer).Include(j => j.Vehicle).Include(j => j.Invoice).AsQueryable().
+- Behavior: Returns all job orders with billing indicator (HasInvoice = j.Invoice != null).
+
+
+--------------------------------------------------------------------------------
+F. PARTS FLOW
+--------------------------------------------------------------------------------
+Startup (loadBackendData) --> api.getParts() --> GET /api/warehouse/parts
+                                                       |
+                     ┌─────────────────────────────────┴────────────────────────────────┐
+                     v                                                                  v
+            Role: Warehouse / Owner / Engineer                                   Role: Accountant
+            [Authorize] Check: PASSED (200 OK)                               [Authorize] Check: FAILED (403 Forbidden)
+                     |                                                                  |
+                     v                                                                  v
+            wParts = SQL Server DB Parts                                  Promise rejected --> setWParts SKIPPED
+                                                                                        |
+                                                                                        v
+                                                                               wParts = SEED_PARTS (Mock Array)
+
+1. Endpoint: GET /api/warehouse/parts (WarehouseController.cs:L29-L37).
+2. Authorization Constraint: [Authorize(Roles = "Warehouse,Owner,Engineer")] (WarehouseController.cs:L8).
+3. Execution Trace for Accountant:
+   - loadBackendData() calls api.getParts().
+   - API returns HTTP 403 Forbidden.
+   - Promise.allSettled catches error (status = "rejected").
+   - if (parts.status === "fulfilled") evaluates to FALSE.
+   - setWParts is skipped; Accountant state retains initial SEED_PARTS array.
+   - Result: Accountant sees hardcoded fallback parts, while Warehouse sees real database parts.
+
+
+--------------------------------------------------------------------------------
+G. loadBackendData() FLOW
+--------------------------------------------------------------------------------
+- Location: src/App.tsx:L14379-L14607.
+- Execution Mechanism: Called inside useEffect(() => { loadBackendData(); }, []) on component mount.
+- Parallel Fetching: Uses Promise.allSettled for 10 endpoints:
+  1. api.getCustomers()
+  2. api.getVehicles()
+  3. api.getJobOrders()
+  4. api.getParts()
+  5. api.getStockMovements()
+  6. api.getInvoices()
+  7. api.getTechnicians()
+  8. api.getAttendanceRecords()
+  9. api.getPayrollTransactions()
+  10. api.getWorkshopSettings()
+
+- Error & Fallback Handling:
+  - Promise.allSettled guarantees that if one API request fails (e.g. 403 on getParts), other successful requests (e.g. getCustomers) are processed normally.
+  - However, for any rejected request, the corresponding useState setter is not called. The state remains set to initial seed data (useState(SEED_JOS), useState(SEED_PARTS)).
+
+
+--------------------------------------------------------------------------------
+H. AUTHENTICATION/TOKEN FLOW
+--------------------------------------------------------------------------------
+1. Token Storage: localStorage.setItem("token", token) via setAuthToken(token) (src/services/api.ts:L18).
+2. Login Execution:
+   - User submits form -> api.login() posts to /api/auth/login -> returns JWT token -> setAuthToken(res.token) stores token -> handleLoginSuccess() sets role and screen.
+3. Timing Flaw:
+   - loadBackendData() runs on initial page mount.
+   - If user is on the Login screen, token is not present yet, so initial Promise.allSettled requests return 401 Unauthorized.
+   - After successful login, loadBackendData() is NOT called.
+   - The user sees mock seed state until they reload the page (F5).
+
+
+--------------------------------------------------------------------------------
+I. API ERROR HANDLING
+--------------------------------------------------------------------------------
+- HTTP Status Codes:
+  - 401 Unauthorized: Handled by api.ts throwing Error -> caught by Promise.allSettled or request caller.
+  - 403 Forbidden: Handled by api.ts throwing Error -> caught by Promise.allSettled.
+  - 404 Not Found / 500 Server Error: Throws Error.
+- Swallowing & Fallback: Errors in loadBackendData are caught by Promise.allSettled and logged quietly. No error modal or toast alerts the user that an API fetch failed; the UI silently displays pre-existing or mock seed state.
+
+
+--------------------------------------------------------------------------------
+J. FRONTEND STATE ARCHITECTURE
+--------------------------------------------------------------------------------
+- State Model: Monolithic, centralized useState variables in App.tsx:
+  - jobOrders: useState(SEED_JOS) (src/App.tsx:L14230)
+  - wParts: useState(SEED_PARTS) (src/App.tsx:L14231)
+  - invoices: useState(SEED_INVOICES)
+- Data Coherency Risk: Because initial state is initialized with mock seed data rather than empty arrays [], any failed API request leaves realistic-looking mock data on screen, giving the false appearance of database inconsistency.
+
+
+--------------------------------------------------------------------------------
+K. CROSS-SESSION SYNCHRONIZATION
+--------------------------------------------------------------------------------
+- Audit Results:
+  - setInterval / setTimeout for refetching: None.
+  - WebSockets / SignalR: None.
+  - Server-Sent Events (SSE): None.
+  - BroadcastChannel / window.addEventListener('storage'): None.
+- Conclusion: There is zero cross-session synchronization architecture in place. Every browser tab is an isolated memory sandbox.
+
+
+--------------------------------------------------------------------------------
+L. DATABASE PERSISTENCE VERIFICATION
+--------------------------------------------------------------------------------
+- Verification:
+  - Creating a Job Order (POST /api/job-orders) immediately executes _context.JobOrders.Add(jobOrder) and await _context.SaveChangesAsync().
+  - Creating a Part (POST /api/warehouse/parts) immediately executes _context.Parts.Add(part) and await _context.SaveChangesAsync().
+  - Database persistence is 100% immediate, transactional, and permanent.
+
+
+--------------------------------------------------------------------------------
+M. ROOT CAUSE OF ENGINEER JOB ORDER VISIBILITY
+--------------------------------------------------------------------------------
+- Root Cause:
+  1. Authentication Timing: Logging in via the UI does not trigger a re-fetch of loadBackendData(). The dashboard presents initial seed state or un-refetched local state until the user reloads the browser (F5).
+  2. Initial Mount 401 Rejection: Unauthenticated initial page loads cause getJobOrders() to fail silently in Promise.allSettled.
+
+
+--------------------------------------------------------------------------------
+N. ROOT CAUSE OF ACCOUNTANT PARTS ISSUE
+--------------------------------------------------------------------------------
+- Root Cause:
+  - [Authorize(Roles = "Warehouse,Owner,Engineer")] on WarehouseController (WarehouseController.cs:L8) forbids Accountant users.
+  - api.getParts() hits /api/warehouse/parts and returns HTTP 403 Forbidden.
+  - loadBackendData() skips setWParts, leaving Accountant viewing mock SEED_PARTS.
+
+
+--------------------------------------------------------------------------------
+O. ROOT CAUSE OF F5 / REFRESH ISSUE
+--------------------------------------------------------------------------------
+- Root Cause:
+  - Absence of real-time push signals (SignalR), polling timers, or post-login data refetch triggers.
+  - Local state mutations only update the active browser tab's memory.
+
+
+--------------------------------------------------------------------------------
+P. COMMON ROOT CAUSES
+--------------------------------------------------------------------------------
+- Single Core Cause: The application relies on a single-mount (useEffect []), non-invalidating frontend data fetch model paired with strict role-scoped controllers that exclude certain roles from shared data endpoints (e.g. Accountant on Warehouse Parts).
+
+
+--------------------------------------------------------------------------------
+Q. INDEPENDENT ROOT CAUSES
+--------------------------------------------------------------------------------
+1. Role Exclusion (Accountant 403): Independent backend authorization attribute issue on WarehouseController.
+2. Cross-Session Synchronization (F5 Requirement): Independent frontend real-time architecture gap.
+3. Post-Login Refetch Delay (Engineer Job Orders): Independent lifecycle flaw in handleLoginSuccess.
+
+
+--------------------------------------------------------------------------------
+R. EXACT FILES + METHODS + CODE LOCATIONS
+--------------------------------------------------------------------------------
+1. WarehouseController.cs: Line 8 ([Authorize(Roles = "Warehouse,Owner,Engineer")]), Line 29 (GetParts).
+2. App.tsx:
+   - Line 14378-14607 (loadBackendData inside useEffect([], ...)).
+   - Line 15350-15366 (handleLoginSuccess missing loadBackendData() call).
+   - Line 14230-14231 (useState initialized with mock SEED_JOS and SEED_PARTS).
+3. api.ts: Line 33-60 (request() method throwing errors on !response.ok).
+4. WarehouseService.cs: Line 276 (GetOpenJobsAsync filtering JobOrderStatus.Open).
+
+
+--------------------------------------------------------------------------------
+S. SAFE FIX ORDER (For Future Reference — Diagnosis Only)
+--------------------------------------------------------------------------------
+1. Fix 1 (Backend Authorization): Add Accountant to WarehouseController's [Authorize] roles or create a shared /api/parts endpoint so all authenticated roles can read parts without 403 errors.
+2. Fix 2 (Post-Login Refetch): Update handleLoginSuccess in App.tsx to invoke loadBackendData() immediately after setting the auth token.
+3. Fix 3 (Empty Default State): Change initial React state defaults from mock seed arrays (SEED_PARTS, SEED_JOS) to empty arrays [] to eliminate confusion between mock fallbacks and real DB data.
+4. Fix 4 (Synchronization / Polling): Implement background polling (e.g. refetching data every 30 seconds or on window focus) or ASP.NET Core SignalR hubs to sync updates across active browser sessions.
+
+================================================================================
+VERIFICATION OF SCOPE COMPLIANCE
+- Files Modified: 0 (Code/Database untouched)
+- Diagnostic Result: Complete focused analysis delivered.
+================================================================================

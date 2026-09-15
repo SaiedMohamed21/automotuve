@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Engineer;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Engineer;
 
 namespace StarAutoCenter.Controllers.Engineer
@@ -11,10 +13,12 @@ namespace StarAutoCenter.Controllers.Engineer
     public class CustomersController : ControllerBase
     {
         private readonly ICustomerService _customerService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public CustomersController(ICustomerService customerService)
+        public CustomersController(ICustomerService customerService, IHubContext<DataSyncHub> hubContext)
         {
             _customerService = customerService;
+            _hubContext = hubContext;
         }
 
         [HttpGet]
@@ -36,6 +40,7 @@ namespace StarAutoCenter.Controllers.Engineer
         public async Task<IActionResult> Create([FromBody] CreateCustomerDto dto)
         {
             var result = await _customerService.CreateAsync(dto);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Customers");
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
@@ -44,6 +49,7 @@ namespace StarAutoCenter.Controllers.Engineer
         {
             var result = await _customerService.UpdateAsync(id, dto);
             if (result == null) return NotFound(new { message = "Customer not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Customers");
             return Ok(result);
         }
     }

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Engineer;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Engineer;
 
 namespace StarAutoCenter.Controllers.Engineer
@@ -11,10 +13,12 @@ namespace StarAutoCenter.Controllers.Engineer
     public class VehiclesController : ControllerBase
     {
         private readonly IVehicleService _vehicleService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public VehiclesController(IVehicleService vehicleService)
+        public VehiclesController(IVehicleService vehicleService, IHubContext<DataSyncHub> hubContext)
         {
             _vehicleService = vehicleService;
+            _hubContext = hubContext;
         }
 
         [HttpGet]
@@ -43,6 +47,7 @@ namespace StarAutoCenter.Controllers.Engineer
         public async Task<IActionResult> Create([FromBody] CreateVehicleDto dto)
         {
             var result = await _vehicleService.CreateAsync(dto);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Vehicles");
             return CreatedAtAction(nameof(GetDetails), new { id = result.Id }, result);
         }
 
@@ -51,6 +56,7 @@ namespace StarAutoCenter.Controllers.Engineer
         {
             var success = await _vehicleService.ChangeOwnerAsync(id, dto);
             if (!success) return NotFound(new { message = "Vehicle not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Vehicles");
             return Ok(new { message = "Owner updated successfully" });
         }
     }

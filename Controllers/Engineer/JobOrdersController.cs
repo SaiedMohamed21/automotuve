@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Engineer;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Engineer;
 
 namespace StarAutoCenter.Controllers.Engineer
@@ -12,10 +14,12 @@ namespace StarAutoCenter.Controllers.Engineer
     public class JobOrdersController : ControllerBase
     {
         private readonly IJobOrderService _jobOrderService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public JobOrdersController(IJobOrderService jobOrderService)
+        public JobOrdersController(IJobOrderService jobOrderService, IHubContext<DataSyncHub> hubContext)
         {
             _jobOrderService = jobOrderService;
+            _hubContext = hubContext;
         }
 
         [HttpGet]
@@ -57,6 +61,7 @@ namespace StarAutoCenter.Controllers.Engineer
             }
 
             var result = await _jobOrderService.CreateAsync(dto);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
             return CreatedAtAction(nameof(GetByNumber), new { number = result.Number }, result);
         }
 
@@ -65,6 +70,7 @@ namespace StarAutoCenter.Controllers.Engineer
         {
             var result = await _jobOrderService.UpdateAsync(number, dto);
             if (result == null) return NotFound(new { message = "Job order not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
             return Ok(result);
         }
 
@@ -73,6 +79,7 @@ namespace StarAutoCenter.Controllers.Engineer
         {
             var success = await _jobOrderService.UpdateStatusAsync(number, dto.Status);
             if (!success) return NotFound(new { message = "Job order not found or invalid status" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
             return Ok(new { message = "Status updated successfully" });
         }
 

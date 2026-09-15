@@ -1,20 +1,24 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Warehouse;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Warehouse;
 
 namespace StarAutoCenter.Controllers.Warehouse
 {
-    [Authorize(Roles = "Warehouse,Owner,Engineer")]
+    [Authorize(Roles = "Warehouse,Owner,Engineer,Accountant")]
     [ApiController]
     [Route("api/warehouse")]
     public class WarehouseController : ControllerBase
     {
         private readonly IWarehouseService _warehouseService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public WarehouseController(IWarehouseService warehouseService)
+        public WarehouseController(IWarehouseService warehouseService, IHubContext<DataSyncHub> hubContext)
         {
             _warehouseService = warehouseService;
+            _hubContext = hubContext;
         }
 
         // ── Dashboard ──
@@ -60,14 +64,15 @@ namespace StarAutoCenter.Controllers.Warehouse
 
             try
             {
-                // Enforce server-side role security: Non-Owner users (e.g. Warehouse) cannot set SellingPrice or PurchasePrice
-                if (!User.IsInRole("Owner"))
+                // Enforce server-side role security: Warehouse users cannot set SellingPrice or PurchasePrice
+                if (User.IsInRole("Warehouse") && !User.IsInRole("Owner") && !User.IsInRole("Accountant"))
                 {
                     dto.SellingPrice = 0;
                     dto.PurchasePrice = 0;
                 }
 
                 var result = await _warehouseService.CreatePartAsync(dto);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
                 return CreatedAtAction(nameof(GetPartDetails), new { id = result.Id }, result);
             }
             catch (ArgumentException ex)
@@ -101,6 +106,7 @@ namespace StarAutoCenter.Controllers.Warehouse
             try
             {
                 var result = await _warehouseService.IssuePartsAsync(joNumber, dto);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
                 return Ok(result);
             }
             catch (InvalidOperationException ex)
@@ -114,6 +120,7 @@ namespace StarAutoCenter.Controllers.Warehouse
         {
             var success = await _warehouseService.RemoveIssuedPartAsync(joNumber, partId);
             if (!success) return NotFound(new { message = "Part not found for this job order" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
             return Ok(new { message = "Part removed" });
         }
 
@@ -122,6 +129,8 @@ namespace StarAutoCenter.Controllers.Warehouse
         {
             var success = await _warehouseService.ConfirmIssueAsync(joNumber);
             if (!success) return NotFound(new { message = "Job order not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
             return Ok(new { message = "Parts confirmed and stock updated" });
         }
 
@@ -138,6 +147,7 @@ namespace StarAutoCenter.Controllers.Warehouse
         public async Task<IActionResult> UpdateStockCount([FromBody] List<StockCountEntryDto> entries)
         {
             var success = await _warehouseService.UpdateStockCountAsync(entries);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
             return Ok(new { message = "Stock updated successfully" });
         }
     }

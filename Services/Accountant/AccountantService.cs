@@ -12,11 +12,12 @@ namespace StarAutoCenter.Services.Accountant
         Task<List<AccountantJobListDto>> GetJobsAsync(string? search = null, string? status = null);
         Task<AccountantJobDetailsDto?> GetJobDetailsAsync(string joNumber);
         Task<bool> SaveWorkFoundAsync(string joNumber, SaveWorkFoundDto dto);
+        Task<bool> SaveJobOrderLaborAsync(string joNumber, SaveJobOrderLaborDto dto);
         Task<InvoiceDetailsDto?> CreateInvoiceAsync(string joNumber, CreateInvoiceDto dto);
         Task<List<InvoiceListDto>> GetInvoicesAsync(string? search = null, string? paymentStatus = null);
         Task<InvoiceDetailsDto?> GetInvoiceDetailsAsync(string invoiceNumber);
         Task<List<PaymentDto>> GetPaymentsAsync(string? search = null);
-        Task<PaymentDto?> RecordPaymentAsync(CreatePaymentDto dto);
+        Task<RecordPaymentResult> RecordPaymentAsync(CreatePaymentDto dto);
         Task<bool> UpdatePartPricesAsync(int partId, UpdatePartPricesDto dto);
     }
 
@@ -86,6 +87,9 @@ namespace StarAutoCenter.Services.Accountant
                     Date = i.Date.ToString("dd MMM yyyy"),
                     Customer = i.JobOrder.Customer.Name,
                     Vehicle = i.JobOrder.Vehicle.Make + " " + i.JobOrder.Vehicle.Model,
+                    PartsTotal = i.PartsTotal,
+                    LaborAmount = i.LaborAmount,
+                    ExpensesTotal = i.ExpensesTotal,
                     GrandTotal = i.GrandTotal,
                     PaymentStatus = i.PaymentStatus.ToString()
                 }).ToListAsync();
@@ -152,6 +156,7 @@ namespace StarAutoCenter.Services.Accountant
                 .Include(j => j.IssuedParts)
                     .ThenInclude(ip => ip.Part)
                 .Include(j => j.AdditionalExpenses)
+                .Include(j => j.LaborItems)
                 .Include(j => j.Invoice)
                 .FirstOrDefaultAsync(j => j.Number == joNumber);
 
@@ -174,15 +179,39 @@ namespace StarAutoCenter.Services.Accountant
                 Amount = e.Amount
             }).ToList();
 
+            var laborItems = jo.LaborItems
+                .OrderBy(l => l.SortOrder)
+                .ThenBy(l => l.Id)
+                .Select(l => new LaborItemDto
+                {
+                    Id = l.Id,
+                    Description = l.Description,
+                    Amount = l.Amount,
+                    SortOrder = l.SortOrder
+                }).ToList();
+
+            if (laborItems.Count == 0 && jo.LaborAmount > 0)
+            {
+                laborItems.Add(new LaborItemDto
+                {
+                    Id = 0,
+                    Description = "Workshop Labor",
+                    Amount = jo.LaborAmount,
+                    SortOrder = 0
+                });
+            }
+
+            var laborAmount = laborItems.Sum(l => l.Amount);
             var partsTotal = issuedParts.Sum(p => p.Total);
             var expensesTotal = expenses.Sum(e => e.Amount);
-            var grandTotal = partsTotal + jo.LaborAmount + expensesTotal;
+            var grandTotal = partsTotal + laborAmount + expensesTotal;
 
             // Work items classification
             var workFoundItems = jo.WorkItems.Select(w => new WorkFoundItemDto
             {
                 Id = w.Id,
                 Description = w.Item,
+                Note = w.Note,
                 Approved = !w.IsDeferred
             }).ToList();
 
@@ -211,7 +240,8 @@ namespace StarAutoCenter.Services.Accountant
                 VehicleVin = jo.Vehicle.VIN,
                 Engineer = jo.Engineer,
                 CustomerRequest = jo.RequiredWork,
-                LaborAmount = jo.LaborAmount,
+                LaborAmount = laborAmount,
+                LaborItems = laborItems,
                 WorkFoundItems = workFoundItems,
                 ApprovedItems = approvedItems,
                 DeferredItems = deferredItems,
@@ -243,6 +273,7 @@ namespace StarAutoCenter.Services.Accountant
                 {
                     JobOrderId = jo.Id,
                     Item = item.Description,
+                    Note = item.Note,
                     IsDeferred = !item.Approved,
                     IsRecommended = false
                 };
@@ -268,71 +299,173 @@ namespace StarAutoCenter.Services.Accountant
             return true;
         }
 
-        public async Task<InvoiceDetailsDto?> CreateInvoiceAsync(string joNumber, CreateInvoiceDto dto)
+        public async Task<bool> SaveJobOrderLaborAsync(string joNumber, SaveJobOrderLaborDto dto)
         {
             var jo = await _context.JobOrders
-                .Include(j => j.Customer)
-                .Include(j => j.Vehicle)
-                .Include(j => j.IssuedParts)
-                    .ThenInclude(ip => ip.Part)
-                .Include(j => j.AdditionalExpenses)
+                .Include(j => j.LaborItems)
                 .Include(j => j.Invoice)
                 .FirstOrDefaultAsync(j => j.Number == joNumber);
 
-            if (jo == null || jo.Invoice != null) return null;
+            if (jo == null || jo.Invoice != null) return false;
 
-            // Update labor amount
-            jo.LaborAmount = dto.LaborAmount;
+            var existingItems = jo.LaborItems.ToList();
+            _context.JobOrderLaborItems.RemoveRange(existingItems);
+            await _context.SaveChangesAsync();
 
-            // Remove old expenses and add new ones
-            _context.AdditionalExpenses.RemoveRange(jo.AdditionalExpenses);
-            foreach (var exp in dto.AdditionalExpenses)
+            int order = 0;
+            foreach (var item in dto.LaborItems)
             {
-                if (!string.IsNullOrWhiteSpace(exp.Description) && exp.Amount > 0)
+                if (!string.IsNullOrWhiteSpace(item.Description) && item.Amount >= 0)
                 {
-                    _context.AdditionalExpenses.Add(new AdditionalExpense
+                    _context.JobOrderLaborItems.Add(new JobOrderLaborItem
                     {
                         JobOrderId = jo.Id,
-                        Description = exp.Description,
-                        Amount = exp.Amount
+                        Description = item.Description.Trim(),
+                        Amount = item.Amount,
+                        SortOrder = item.SortOrder > 0 ? item.SortOrder : order++
                     });
                 }
             }
 
             await _context.SaveChangesAsync();
-
-            // Recalculate totals
-            var partsTotal = jo.IssuedParts.Sum(ip => ip.Qty * ip.Part.SellingPrice);
-            var expensesTotal = await _context.AdditionalExpenses
-                .Where(e => e.JobOrderId == jo.Id)
-                .SumAsync(e => e.Amount);
-            var grandTotal = partsTotal + dto.LaborAmount + expensesTotal;
-
-            // Generate invoice number
-            var invoiceNumber = await GetNextInvoiceNumberAsync();
-
-            // Create invoice
-            var invoice = new Invoice
-            {
-                InvoiceNumber = invoiceNumber,
-                JobOrderId = jo.Id,
-                Date = DateTime.UtcNow,
-                PartsTotal = partsTotal,
-                LaborAmount = dto.LaborAmount,
-                ExpensesTotal = expensesTotal,
-                GrandTotal = grandTotal,
-                PaymentStatus = PaymentStatus.Unpaid,
-                PaidAmount = 0
-            };
-
-            _context.Invoices.Add(invoice);
-
-            // Change job order status to Closed
-            jo.Status = JobOrderStatus.Closed;
-
+            await _context.Entry(jo).Collection(j => j.LaborItems).LoadAsync();
+            jo.LaborAmount = jo.LaborItems.Sum(li => li.Amount);
             await _context.SaveChangesAsync();
+            return true;
+        }
 
-            return await GetInvoiceDetailsAsync(invoiceNumber);
+        public async Task<InvoiceDetailsDto?> CreateInvoiceAsync(string joNumber, CreateInvoiceDto dto)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var jo = await _context.JobOrders
+                    .Include(j => j.Customer)
+                    .Include(j => j.Vehicle)
+                    .Include(j => j.IssuedParts)
+                        .ThenInclude(ip => ip.Part)
+                    .Include(j => j.AdditionalExpenses)
+                    .Include(j => j.LaborItems)
+                    .Include(j => j.Invoice)
+                    .FirstOrDefaultAsync(j => j.Number == joNumber);
+
+                if (jo == null || jo.Invoice != null) return null;
+
+                // 1. If dto contains laborItems, update JobOrder labor items
+                if (dto.LaborItems != null && dto.LaborItems.Count > 0)
+                {
+                    var existingItems = jo.LaborItems.ToList();
+                    _context.JobOrderLaborItems.RemoveRange(existingItems);
+                    await _context.SaveChangesAsync();
+
+                    int order = 0;
+                    foreach (var item in dto.LaborItems)
+                    {
+                        if (!string.IsNullOrWhiteSpace(item.Description) && item.Amount >= 0)
+                        {
+                            _context.JobOrderLaborItems.Add(new JobOrderLaborItem
+                            {
+                                JobOrderId = jo.Id,
+                                Description = item.Description.Trim(),
+                                Amount = item.Amount,
+                                SortOrder = item.SortOrder > 0 ? item.SortOrder : order++
+                            });
+                        }
+                    }
+                    await _context.SaveChangesAsync();
+                    await _context.Entry(jo).Collection(j => j.LaborItems).LoadAsync();
+                }
+
+                // 2. Determine labor total from itemized rows or dto
+                decimal laborTotal = jo.LaborItems.Count > 0
+                    ? jo.LaborItems.Sum(li => li.Amount)
+                    : dto.LaborAmount;
+
+                jo.LaborAmount = laborTotal;
+
+                // 3. Remove old expenses and add new ones
+                _context.AdditionalExpenses.RemoveRange(jo.AdditionalExpenses.ToList());
+                await _context.SaveChangesAsync();
+                foreach (var exp in dto.AdditionalExpenses)
+                {
+                    if (!string.IsNullOrWhiteSpace(exp.Description) && exp.Amount > 0)
+                    {
+                        _context.AdditionalExpenses.Add(new AdditionalExpense
+                        {
+                            JobOrderId = jo.Id,
+                            Description = exp.Description,
+                            Amount = exp.Amount
+                        });
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+
+                // Recalculate totals
+                var partsTotal = jo.IssuedParts.Sum(ip => ip.Qty * ip.Part.SellingPrice);
+                var expensesTotal = await _context.AdditionalExpenses
+                    .Where(e => e.JobOrderId == jo.Id)
+                    .SumAsync(e => e.Amount);
+                var grandTotal = partsTotal + laborTotal + expensesTotal;
+
+                // Generate invoice number
+                var invoiceNumber = await GetNextInvoiceNumberAsync();
+
+                // Create invoice
+                var invoice = new Invoice
+                {
+                    InvoiceNumber = invoiceNumber,
+                    JobOrderId = jo.Id,
+                    Date = DateTime.UtcNow,
+                    PartsTotal = partsTotal,
+                    LaborAmount = laborTotal,
+                    ExpensesTotal = expensesTotal,
+                    GrandTotal = grandTotal,
+                    PaymentStatus = PaymentStatus.Unpaid,
+                    PaidAmount = 0
+                };
+
+                _context.Invoices.Add(invoice);
+                await _context.SaveChangesAsync();
+
+                // 4. Snapshot InvoiceLaborItems
+                if (jo.LaborItems.Count > 0)
+                {
+                    foreach (var li in jo.LaborItems)
+                    {
+                        _context.InvoiceLaborItems.Add(new InvoiceLaborItem
+                        {
+                            InvoiceId = invoice.Id,
+                            Description = li.Description,
+                            Amount = li.Amount,
+                            SortOrder = li.SortOrder
+                        });
+                    }
+                }
+                else if (laborTotal > 0)
+                {
+                    _context.InvoiceLaborItems.Add(new InvoiceLaborItem
+                    {
+                        InvoiceId = invoice.Id,
+                        Description = "Workshop Labor",
+                        Amount = laborTotal,
+                        SortOrder = 0
+                    });
+                }
+
+                // Change job order status to Closed
+                jo.Status = JobOrderStatus.Closed;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return await GetInvoiceDetailsAsync(invoiceNumber);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
 
         public async Task<List<InvoiceListDto>> GetInvoicesAsync(string? search = null, string? paymentStatus = null)
@@ -369,6 +502,9 @@ namespace StarAutoCenter.Services.Accountant
                     Date = i.Date.ToString("dd MMM yyyy"),
                     Customer = i.JobOrder.Customer.Name,
                     Vehicle = i.JobOrder.Vehicle.Make + " " + i.JobOrder.Vehicle.Model,
+                    PartsTotal = i.PartsTotal,
+                    LaborAmount = i.LaborAmount,
+                    ExpensesTotal = i.ExpensesTotal,
                     GrandTotal = i.GrandTotal,
                     PaymentStatus = i.PaymentStatus.ToString()
                 }).ToListAsync();
@@ -386,12 +522,35 @@ namespace StarAutoCenter.Services.Accountant
                         .ThenInclude(ip => ip.Part)
                 .Include(i => i.JobOrder)
                     .ThenInclude(j => j.AdditionalExpenses)
+                .Include(i => i.LaborItems)
                 .Include(i => i.Payments)
                 .FirstOrDefaultAsync(i => i.InvoiceNumber == invoiceNumber);
 
             if (inv == null) return null;
 
             var jo = inv.JobOrder;
+
+            var laborItems = inv.LaborItems
+                .OrderBy(l => l.SortOrder)
+                .ThenBy(l => l.Id)
+                .Select(l => new LaborItemDto
+                {
+                    Id = l.Id,
+                    Description = l.Description,
+                    Amount = l.Amount,
+                    SortOrder = l.SortOrder
+                }).ToList();
+
+            if (laborItems.Count == 0 && inv.LaborAmount > 0)
+            {
+                laborItems.Add(new LaborItemDto
+                {
+                    Id = 0,
+                    Description = "Workshop Labor",
+                    Amount = inv.LaborAmount,
+                    SortOrder = 0
+                });
+            }
 
             return new InvoiceDetailsDto
             {
@@ -417,6 +576,7 @@ namespace StarAutoCenter.Services.Accountant
                 }).ToList(),
                 PartsTotal = inv.PartsTotal,
                 LaborAmount = inv.LaborAmount,
+                LaborItems = laborItems,
                 AdditionalExpenses = jo.AdditionalExpenses.Select(e => new AdditionalExpenseDto
                 {
                     Id = e.Id,
@@ -471,53 +631,132 @@ namespace StarAutoCenter.Services.Accountant
                 }).ToListAsync();
         }
 
-        public async Task<PaymentDto?> RecordPaymentAsync(CreatePaymentDto dto)
+        public async Task<RecordPaymentResult> RecordPaymentAsync(CreatePaymentDto dto)
         {
-            var invoice = await _context.Invoices
-                .Include(i => i.JobOrder)
-                    .ThenInclude(j => j.Customer)
-                .FirstOrDefaultAsync(i => i.InvoiceNumber == dto.InvoiceNumber);
-
-            if (invoice == null) return null;
-
-            if (!Enum.TryParse<PaymentMethod>(dto.Method, true, out var method))
-                method = PaymentMethod.Cash;
-
-            var payment = new Payment
+            // 1. Server-side validation: Reject zero or negative payments
+            if (dto.Amount <= 0)
             {
-                InvoiceId = invoice.Id,
-                Amount = dto.Amount,
-                Date = DateTime.UtcNow,
-                Method = method,
-                Note = dto.Note
-            };
-
-            _context.Payments.Add(payment);
-
-            // Update invoice paid amount and status
-            invoice.PaidAmount += dto.Amount;
-            if (invoice.PaidAmount >= invoice.GrandTotal)
-            {
-                invoice.PaymentStatus = PaymentStatus.Paid;
-                invoice.PaidAmount = invoice.GrandTotal; // Cap at grand total
-            }
-            else if (invoice.PaidAmount > 0)
-            {
-                invoice.PaymentStatus = PaymentStatus.PartiallyPaid;
+                return new RecordPaymentResult
+                {
+                    Success = false,
+                    StatusCode = 400,
+                    ErrorMessage = "Payment amount must be greater than 0."
+                };
             }
 
-            await _context.SaveChangesAsync();
-
-            return new PaymentDto
+            // 2. Execute within a Serializable database transaction for concurrency protection
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
             {
-                Id = payment.Id,
-                Amount = payment.Amount,
-                Date = payment.Date.ToString("dd MMM yyyy"),
-                Method = payment.Method.ToString(),
-                Note = payment.Note,
-                InvoiceNumber = invoice.InvoiceNumber,
-                CustomerName = invoice.JobOrder.Customer.Name
-            };
+                var invoice = await _context.Invoices
+                    .Include(i => i.JobOrder)
+                        .ThenInclude(j => j.Customer)
+                    .FirstOrDefaultAsync(i => i.InvoiceNumber == dto.InvoiceNumber);
+
+                if (invoice == null)
+                {
+                    await transaction.RollbackAsync();
+                    return new RecordPaymentResult
+                    {
+                        Success = false,
+                        StatusCode = 404,
+                        ErrorMessage = "Invoice not found."
+                    };
+                }
+
+                // Reject payment if invoice is already fully paid
+                if (invoice.PaymentStatus == PaymentStatus.Paid || invoice.PaidAmount >= invoice.GrandTotal)
+                {
+                    await transaction.RollbackAsync();
+                    return new RecordPaymentResult
+                    {
+                        Success = false,
+                        StatusCode = 400,
+                        ErrorMessage = "Invoice is already fully paid."
+                    };
+                }
+
+                // Calculate exact remaining balance
+                decimal remaining = invoice.GrandTotal - invoice.PaidAmount;
+                if (remaining <= 0)
+                {
+                    await transaction.RollbackAsync();
+                    return new RecordPaymentResult
+                    {
+                        Success = false,
+                        StatusCode = 400,
+                        ErrorMessage = "Invoice has no remaining balance."
+                    };
+                }
+
+                // Reject overpayments (do NOT cap overpayments; reject entire request)
+                if (dto.Amount > remaining)
+                {
+                    await transaction.RollbackAsync();
+                    return new RecordPaymentResult
+                    {
+                        Success = false,
+                        StatusCode = 400,
+                        ErrorMessage = $"Payment amount ({dto.Amount:N2} EGP) exceeds remaining balance ({remaining:N2} EGP)."
+                    };
+                }
+
+                if (!Enum.TryParse<PaymentMethod>(dto.Method, true, out var method))
+                    method = PaymentMethod.Cash;
+
+                var payment = new Payment
+                {
+                    InvoiceId = invoice.Id,
+                    Amount = dto.Amount,
+                    Date = DateTime.UtcNow,
+                    Method = method,
+                    Note = dto.Note
+                };
+
+                _context.Payments.Add(payment);
+
+                // Update invoice paid amount and status
+                invoice.PaidAmount += dto.Amount;
+                if (invoice.PaidAmount >= invoice.GrandTotal)
+                {
+                    invoice.PaymentStatus = PaymentStatus.Paid;
+                    invoice.PaidAmount = invoice.GrandTotal; // Exact match
+                }
+                else if (invoice.PaidAmount > 0)
+                {
+                    invoice.PaymentStatus = PaymentStatus.PartiallyPaid;
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                var paymentDto = new PaymentDto
+                {
+                    Id = payment.Id,
+                    Amount = payment.Amount,
+                    Date = payment.Date.ToString("dd MMM yyyy"),
+                    Method = payment.Method.ToString(),
+                    Note = payment.Note,
+                    InvoiceNumber = invoice.InvoiceNumber,
+                    CustomerName = invoice.JobOrder.Customer.Name
+                };
+
+                return new RecordPaymentResult
+                {
+                    Success = true,
+                    Payment = paymentDto
+                };
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return new RecordPaymentResult
+                {
+                    Success = false,
+                    StatusCode = 500,
+                    ErrorMessage = $"Payment transaction failed: {ex.Message}"
+                };
+            }
         }
 
         public async Task<bool> UpdatePartPricesAsync(int partId, UpdatePartPricesDto dto)

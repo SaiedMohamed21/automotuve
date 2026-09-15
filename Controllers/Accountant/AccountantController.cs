@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Accountant;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Accountant;
 
 namespace StarAutoCenter.Controllers.Accountant
@@ -11,10 +13,12 @@ namespace StarAutoCenter.Controllers.Accountant
     public class AccountantController : ControllerBase
     {
         private readonly IAccountantService _accountantService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public AccountantController(IAccountantService accountantService)
+        public AccountantController(IAccountantService accountantService, IHubContext<DataSyncHub> hubContext)
         {
             _accountantService = accountantService;
+            _hubContext = hubContext;
         }
 
         [HttpGet("dashboard")]
@@ -46,7 +50,17 @@ namespace StarAutoCenter.Controllers.Accountant
         {
             var success = await _accountantService.SaveWorkFoundAsync(joNumber, dto);
             if (!success) return NotFound(new { message = "Job order not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
             return Ok(new { message = "Work found saved successfully" });
+        }
+
+        [HttpPost("jobs/{joNumber}/labor")]
+        public async Task<IActionResult> SaveJobOrderLabor(string joNumber, [FromBody] SaveJobOrderLaborDto dto)
+        {
+            var success = await _accountantService.SaveJobOrderLaborAsync(joNumber, dto);
+            if (!success) return BadRequest(new { message = "Cannot update labor. Job order not found or invoice already exists." });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
+            return Ok(new { message = "Labor items saved successfully" });
         }
 
         [HttpPost("jobs/{joNumber}/invoice")]
@@ -54,6 +68,8 @@ namespace StarAutoCenter.Controllers.Accountant
         {
             var result = await _accountantService.CreateInvoiceAsync(joNumber, dto);
             if (result == null) return BadRequest(new { message = "Cannot create invoice. Job order not found or invoice already exists." });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Invoices");
+            await _hubContext.Clients.All.SendAsync("DataChanged", "JobOrders");
             return Ok(result);
         }
 
@@ -85,8 +101,15 @@ namespace StarAutoCenter.Controllers.Accountant
         public async Task<IActionResult> RecordPayment([FromBody] CreatePaymentDto dto)
         {
             var result = await _accountantService.RecordPaymentAsync(dto);
-            if (result == null) return NotFound(new { message = "Invoice not found" });
-            return Ok(result);
+            if (!result.Success)
+            {
+                if (result.StatusCode == 404)
+                    return NotFound(new { message = result.ErrorMessage ?? "Invoice not found" });
+                return BadRequest(new { message = result.ErrorMessage ?? "Payment validation failed" });
+            }
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Invoices");
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Payments");
+            return Ok(result.Payment);
         }
 
         [HttpPut("parts/{partId}/prices")]
@@ -94,6 +117,7 @@ namespace StarAutoCenter.Controllers.Accountant
         {
             var success = await _accountantService.UpdatePartPricesAsync(partId, dto);
             if (!success) return NotFound(new { message = "Part not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
             return Ok(new { message = "Prices updated successfully" });
         }
     }

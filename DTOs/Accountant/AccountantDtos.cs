@@ -1,5 +1,26 @@
 namespace StarAutoCenter.DTOs.Accountant
 {
+    // ── Labor DTOs ──
+    public class LaborItemDto
+    {
+        public int Id { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    public class LaborInputItem
+    {
+        public string Description { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public int SortOrder { get; set; }
+    }
+
+    public class SaveJobOrderLaborDto
+    {
+        public List<LaborInputItem> LaborItems { get; set; } = new();
+    }
+
     // ── Dashboard ──
     public class AccountantDashboardDto
     {
@@ -44,6 +65,7 @@ namespace StarAutoCenter.DTOs.Accountant
         public string? Engineer { get; set; }
         public string? CustomerRequest { get; set; }
         public decimal LaborAmount { get; set; }
+        public List<LaborItemDto> LaborItems { get; set; } = new();
         public List<WorkFoundItemDto> WorkFoundItems { get; set; } = new();
         public List<ApprovedWorkDto> ApprovedItems { get; set; } = new();
         public List<string> DeferredItems { get; set; } = new();
@@ -60,6 +82,7 @@ namespace StarAutoCenter.DTOs.Accountant
     {
         public int Id { get; set; }
         public string Description { get; set; } = string.Empty;
+        public string? Note { get; set; }
         public bool Approved { get; set; }
     }
 
@@ -95,6 +118,7 @@ namespace StarAutoCenter.DTOs.Accountant
     public class WorkFoundInputItem
     {
         public string Description { get; set; } = string.Empty;
+        public string? Note { get; set; }
         public bool Approved { get; set; }
     }
 
@@ -102,6 +126,7 @@ namespace StarAutoCenter.DTOs.Accountant
     public class CreateInvoiceDto
     {
         public decimal LaborAmount { get; set; }
+        public List<LaborInputItem> LaborItems { get; set; } = new();
         public List<ExpenseInputItem> AdditionalExpenses { get; set; } = new();
     }
 
@@ -120,6 +145,9 @@ namespace StarAutoCenter.DTOs.Accountant
         public string Date { get; set; } = string.Empty;
         public string Customer { get; set; } = string.Empty;
         public string Vehicle { get; set; } = string.Empty;
+        public decimal PartsTotal { get; set; }
+        public decimal LaborAmount { get; set; }
+        public decimal ExpensesTotal { get; set; }
         public decimal GrandTotal { get; set; }
         public string PaymentStatus { get; set; } = string.Empty;
     }
@@ -141,6 +169,7 @@ namespace StarAutoCenter.DTOs.Accountant
         public List<IssuedPartDto> IssuedParts { get; set; } = new();
         public decimal PartsTotal { get; set; }
         public decimal LaborAmount { get; set; }
+        public List<LaborItemDto> LaborItems { get; set; } = new();
         public List<AdditionalExpenseDto> AdditionalExpenses { get; set; } = new();
         public decimal ExpensesTotal { get; set; }
         public decimal GrandTotal { get; set; }
@@ -168,6 +197,14 @@ namespace StarAutoCenter.DTOs.Accountant
         public decimal Amount { get; set; }
         public string Method { get; set; } = "Cash";
         public string? Note { get; set; }
+    }
+
+    public class RecordPaymentResult
+    {
+        public bool Success { get; set; }
+        public string? ErrorMessage { get; set; }
+        public int StatusCode { get; set; } = 400;
+        public PaymentDto? Payment { get; set; }
     }
 
     // ── Update Part Prices ──

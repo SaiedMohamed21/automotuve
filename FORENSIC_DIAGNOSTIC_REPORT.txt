@@ -1,0 +1,392 @@
+================================================================================
+FORENSIC DIAGNOSTIC REPORT: SOS MOTOR WORKS
+Audit Mode: Strict Read-Only Investigation
+Environment: ASP.NET Core 8 Web API + Entity Framework Core (SQL Server) + React 19 / Vite SPA
+Scope: Architectural, Database, Authorization, API, and Frontend Synchronization Audit
+================================================================================
+
+--------------------------------------------------------------------------------
+A. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+This forensic investigation analyzed the reported data consistency, role visibility, parts availability, and cross-screen synchronization issues in the SOS Motor Works application.
+
+The investigation confirms that while the application relies on a single, unified database schema managed by Entity Framework Core, the reported symptoms stem from three distinct architectural root causes working in combination:
+
+1. Authorization Role Mismatch (Parts Inconsistency): The primary Parts endpoint (GET /api/warehouse/parts) is annotated with [Authorize(Roles = "Warehouse,Owner,Engineer")]. Accountant users are explicitly excluded from accessing this endpoint, resulting in HTTP 403 Forbidden responses. Because the frontend initial data load (loadBackendData) queries api.getParts() for all users on startup, logins by Accountant users cause the initial Parts Promise to reject, leaving the frontend state empty or reliant on local fallback data.
+
+2. Missing Real-Time / Inter-Session Synchronization Architecture: The React SPA manages application state in monolithic useState hooks loaded once on startup (useEffect on mount). When a Job Order or Part is created/updated in one browser tab, the mutation updates the backend database and the local React state of that specific browser session only. There is no WebSockets/SignalR, Server-Sent Events, polling, or cross-session cache invalidation. Consequently, already-open screens in other browser tabs/roles retain stale snapshots until a manual browser refresh (F5) is performed.
+
+3. Identity-to-Entity Decoupling (Engineer Visibility): The JobOrder model stores the engineer reference as a plain, unconstrained string property (public string? Engineer { get; set; }) populated from User.Identity.Name during creation. There is no foreign key linking JobOrder to ApplicationUser or an Engineer entity. If username/email representations differ between JWT tokens or seeding, or if the initial API request fails during login/navigation, Job Orders appear missing for Engineer users.
+
+
+--------------------------------------------------------------------------------
+B. DATABASE CONNECTION ARCHITECTURE
+--------------------------------------------------------------------------------
+- Connection Provider: Managed entirely via EF Core in Program.cs using:
+  builder.Services.AddDbContext<ApplicationDbContext>(options =>
+      options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+- Connection String Key: DefaultConnection is consistently used throughout the codebase.
+- Secondary DbContexts / Direct SQL: None exist. All controllers and services inject the single ApplicationDbContext. No raw SqlConnection or secondary ORM instances were found.
+- Connection Configuration Source:
+  - Base configuration: appsettings.json
+  - Environment variable override: Standard ASP.NET Core environment variable ConnectionStrings__DefaultConnection or Azure App Service / Railway settings overrides appsettings.json at runtime.
+
+
+--------------------------------------------------------------------------------
+C. PRODUCTION DATABASE
+--------------------------------------------------------------------------------
+- Provider: Microsoft SQL Server.
+- Connection Target: Configured via production environment variable ConnectionStrings__DefaultConnection in Azure App Service / hosting environment.
+- Schema Control: Database migrations are automatically applied at application startup in Program.cs via context.Database.Migrate().
+
+
+--------------------------------------------------------------------------------
+D. LOCAL DATABASE
+--------------------------------------------------------------------------------
+- Provider: Microsoft SQL Server Express (DESKTOP-7SICAF1\SQLEXPRESS).
+- Database Name: StarAutoCenter.
+- ConnectionString in Codebase:
+  Server=DESKTOP-7SICAF1\SQLEXPRESS;Database=StarAutoCenter;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True
+- Comparison: Local and production use identical EF Core models and migrations, but point to distinct SQL Server database instances configured via environment overrides.
+
+
+--------------------------------------------------------------------------------
+E. EF CORE / MIGRATION STATUS
+--------------------------------------------------------------------------------
+- Migration Location: Migrations/ directory.
+- Migration Inventory:
+  1. 20260909205751_InitDB: Initial schema (Customers, Vehicles, JobOrders, Parts, IssuedParts, StockMovements).
+  2. 20260909214633_InitDBb: Additional initial fields.
+  3. 20260911110242_AddAccountantModule: Invoices, Payments, AdditionalExpenses.
+  4. 20260912041055_AddPayrollModule: Technicians, AttendanceRecords, PayrollTransactions.
+  5. 20260912155910_AddSupplierModule: Suppliers, SupplierPurchases, SupplierPurchaseItems, SupplierPayments, SupplierAccountTransactions.
+  6. 20260912165703_AddExpensesModule: Expenses (Operating Expenses).
+  7. 20260912181458_AddWorkshopBrandingFields: Workshop branding fields in BusinessSettings.
+- Latest Migration: 20260912181458_AddWorkshopBrandingFields.
+- Global Query Filters Configured in ApplicationDbContext.cs:
+  - Customer: !c.IsDeleted
+  - Vehicle: !v.IsDeleted
+  - Technician: !t.IsDeleted
+  - Supplier: !s.IsDeleted
+  (Note: JobOrder, Part, IssuedPart, StockMovement, and Invoice do NOT have global query filters).
+
+
+--------------------------------------------------------------------------------
+F. COMPLETE ENTITY / ATTRIBUTE INVENTORY
+--------------------------------------------------------------------------------
+- JobOrder (Table: JobOrders) [PK: Id (int)]
+  Attributes: Number (string 20, Unique Index), CustomerId (FK), VehicleId (FK), Status (enum), Engineer (string 200), LaborAmount, Km, CreatedAt.
+- Part (Table: Parts) [PK: Id (int)]
+  Attributes: Name (string 300), Number (string 50, Unique Index), CurrentQty, MinQty, PurchasePrice, SellingPrice, Status (enum).
+- Customer (Table: Customers) [PK: Id (int)]
+  Attributes: Name (string 200), Phone (string 20, Index), Email, Address, IsDeleted (Soft Delete Filter: !c.IsDeleted).
+- Vehicle (Table: Vehicles) [PK: Id (int)]
+  Attributes: Make, Model, Year, Plate (string 20, Index), VIN, Color, Km, Visits, CustomerId (FK), IsDeleted (Soft Delete Filter: !v.IsDeleted).
+- IssuedPart (Table: IssuedParts) [PK: Id (int)]
+  Attributes: JobOrderId (FK), PartId (FK), Qty.
+- StockMovement (Table: StockMovements) [PK: Id (int)]
+  Attributes: PartId (FK), Type (enum), Qty, Reference, Date.
+- Invoice (Table: Invoices) [PK: Id (int)]
+  Attributes: InvoiceNumber (Unique Index), JobOrderId (FK), GrandTotal, PaymentStatus.
+- Payment (Table: Payments) [PK: Id (int)]
+  Attributes: InvoiceId (FK), Amount, Method, Date.
+- AdditionalExpense (Table: AdditionalExpenses) [PK: Id (int)]
+  Attributes: JobOrderId (FK), Description, Amount.
+- JobOrderWorkItem (Table: JobOrderWorkItems) [PK: Id (int)]
+  Attributes: JobOrderId (FK), Item, IsDeferred, IsRecommended.
+- Technician (Table: Technicians) [PK: Id (string 50)]
+  Attributes: Name, Phone, DailyRate, Status, IsDeleted (Soft Delete Filter: !t.IsDeleted).
+- AttendanceRecord (Table: AttendanceRecords) [PK: Id (int)]
+  Attributes: TechnicianId (FK), Date (Unique Index: TechnicianId+Date), Status.
+- PayrollTransaction (Table: PayrollTransactions) [PK: Id (int)]
+  Attributes: TechnicianId (FK), Amount, Type, Date.
+- Supplier (Table: Suppliers) [PK: Id (int)]
+  Attributes: Name, Phone, Balance, IsDeleted (Soft Delete Filter: !s.IsDeleted).
+- SupplierPurchase (Table: SupplierPurchases) [PK: Id (int)]
+  Attributes: PurchaseNumber (Unique Index), SupplierId (FK), TotalAmount.
+- SupplierPurchaseItem (Table: SupplierPurchaseItems) [PK: Id (int)]
+  Attributes: PurchaseId (FK), PartId (FK), Qty, UnitPrice.
+- SupplierPayment (Table: SupplierPayments) [PK: Id (int)]
+  Attributes: PaymentNumber (Unique Index), SupplierId (FK), Amount.
+- Expense (Table: Expenses) [PK: Id (int)]
+  Attributes: ExpenseNumber (Unique Index), Category, Amount, ExpenseDate.
+- BusinessSettings (Table: BusinessSettings) [PK: Id (int)]
+  Attributes: CompanyName, Phone, Address, Currency, LogoUrl.
+- ApplicationUser (Table: AspNetUsers) [PK: Id (string 450)]
+  Attributes: Email, FullName, Role (enum UserRole), IsActive.
+
+
+--------------------------------------------------------------------------------
+G. COMPLETE PART DATA MODEL
+--------------------------------------------------------------------------------
+Entity: Part -> Table: Parts
+- Id: int (PK, Identity)
+- Name: nvarchar(300), Required
+- Number: nvarchar(50), Required, Unique Index
+- OEM: nvarchar(50), Nullable
+- Brand: nvarchar(100), Nullable
+- Category: nvarchar(100), Nullable
+- CompatibleVehicles: nvarchar(max), Nullable (JSON array)
+- CurrentQty: int, Required (Default: 0)
+- MinQty: int, Required (Default: 0)
+- Location: nvarchar(20), Nullable (Warehouse location code)
+- PurchasePrice: decimal(18,2), Required
+- SellingPrice: decimal(18,2), Required
+- Status: int (enum PartStockStatus: InStock, LowStock, OutOfStock)
+- CreatedAt: datetime2, Required
+
+Inventory Mechanics & Source of Truth:
+- Part.CurrentQty is the primary persisted quantity column.
+- Audit trail is maintained in StockMovements table (Type: StockIn or Issue).
+- When parts are confirmed issued to a Job Order (WarehouseService.ConfirmIssueAsync), Part.CurrentQty is updated directly in Parts table and a negative quantity row is written to StockMovements.
+- Field Restrictions: In WarehouseController.cs, non-Owner roles (e.g. Warehouse) creating a part have SellingPrice and PurchasePrice force-reset to 0 server-side.
+
+
+--------------------------------------------------------------------------------
+H. COMPLETE JOB ORDER DATA MODEL
+--------------------------------------------------------------------------------
+Entity: JobOrder -> Table: JobOrders
+- Id: int (PK, Identity)
+- Number: nvarchar(20), Required, Unique Index (Format: JO-YYYY-NNNNN)
+- Date: datetime2, Required
+- Status: int (enum JobOrderStatus: Open, Complete, Closed)
+- Type: nvarchar(100), Nullable
+- RequiredWork: nvarchar(max), Nullable
+- CompletedWork: nvarchar(max), Nullable
+- Notes: nvarchar(max), Nullable
+- LaborAmount: decimal(18,2), Required (Default: 0)
+- Km: nvarchar(20), Nullable (Snapshot odometer)
+- Engineer: nvarchar(200), Nullable (Plain text name of engineer)
+- CustomerId: int (FK -> Customers.Id, Restrict Delete)
+- VehicleId: int (FK -> Vehicles.Id, Restrict Delete)
+- CreatedAt: datetime2, Required
+
+Parts Junction Table: IssuedPart table (JobOrderId, PartId, Qty).
+Additional Expenses: AdditionalExpense table (JobOrderId, Description, Amount).
+
+
+--------------------------------------------------------------------------------
+I. CUSTOMER DATA MODEL
+--------------------------------------------------------------------------------
+Entity: Customer -> Table: Customers
+- Id: int (PK, Identity)
+- Name: nvarchar(200), Required
+- Phone: nvarchar(20), Required, Non-Unique Index
+- Email: nvarchar(200), Nullable
+- Address: nvarchar(500), Nullable
+- IsDeleted: bit, Required (Soft Delete Query Filter: !c.IsDeleted)
+
+
+--------------------------------------------------------------------------------
+J. VEHICLE DATA MODEL
+--------------------------------------------------------------------------------
+Entity: Vehicle -> Table: Vehicles
+- Id: int (PK, Identity)
+- Make: nvarchar(100), Required
+- Model: nvarchar(100), Required
+- Year: nvarchar(10), Required
+- Plate: nvarchar(20), Required, Non-Unique Index
+- VIN: nvarchar(50), Nullable
+- Color: nvarchar(50), Nullable
+- Km: nvarchar(20), Nullable (Latest odometer reading)
+- Visits: int, Required
+- LastVisit: datetime2, Nullable
+- CustomerId: int (FK -> Customers.Id, Restrict Delete)
+- IsDeleted: bit, Required (Soft Delete Query Filter: !v.IsDeleted)
+
+Odometer (KM) Source-of-Truth Analysis:
+- Vehicle.Km stores the latest overall vehicle odometer reading.
+- JobOrder.Km stores the snapshot mileage recorded specifically for that Job Order.
+- In JobOrderService.cs, creating a Job Order saves JobOrder.Km and updates Vehicle.Km to the new reading, preserving historical Job Order snapshots while keeping current vehicle mileage up to date.
+
+
+--------------------------------------------------------------------------------
+K. USER / ENGINEER / EMPLOYEE / ROLE MODEL
+--------------------------------------------------------------------------------
+- Entity: ApplicationUser (inherits IdentityUser) -> Table: AspNetUsers.
+- Identity Roles: Defined in AspNetRoles ("Engineer", "Warehouse", "Accountant", "Owner").
+- Role Enum: UserRole (Engineer = 0, Warehouse = 1, Accountant = 2, Owner = 3).
+- Engineer-to-JobOrder Relationship Inspection:
+  - There is no Engineer table or entity.
+  - JobOrder.Engineer is an unconstrained string column (nvarchar(200)).
+  - When an Engineer creates a Job Order in JobOrdersController.cs, the controller extracts User.FindFirstValue(ClaimTypes.Name) and populates dto.Engineer.
+  - There is no foreign key constraint, no EngineerId integer/GUID, and no identity-level link enforced by the database.
+
+
+--------------------------------------------------------------------------------
+L. WORKSHOP / BRANCH / WAREHOUSE MODEL
+--------------------------------------------------------------------------------
+- Entity: BusinessSettings -> Table: BusinessSettings.
+- Architecture: Single-tenant, single-location workshop management system.
+- Attributes: CompanyName, Address, Phone, Email, Currency, LogoUrl.
+- Findings: No multi-branch, multi-warehouse, or organizational hierarchy entities exist in the database.
+
+
+--------------------------------------------------------------------------------
+M. COMPLETE RELATIONSHIP / ER MAP
+--------------------------------------------------------------------------------
+Customer (1) ----< (N) Vehicle
+   |                    |
+   | (1)                | (1)
+   v (N)                v (N)
+ ┌───────────────────────────┐
+ │         JobOrder          │
+ └─────────────┬─────────────┘
+               |
+   ┌───────────┼───────────┬───────────────┐
+   | (1)       | (1)       | (1)           | (1)
+   v (N)       v (N)       v (N)           v (1)
+IssuedPart  WorkItem   AddExpense       Invoice
+   ^                                       |
+   | (N)                                   | (1)
+ Part                                      v (N)
+   | (1)                                Payment
+   v (N)
+StockMovement
+
+FK Constraints & Cascade Behavior:
+- Customer -> Vehicle: DeleteBehavior.Restrict
+- Customer -> JobOrder: DeleteBehavior.Restrict
+- Vehicle -> JobOrder: DeleteBehavior.Restrict
+- JobOrder -> IssuedPart: DeleteBehavior.Cascade
+- Part -> IssuedPart: DeleteBehavior.Restrict
+- JobOrder -> Invoice: DeleteBehavior.Restrict (One-to-One)
+- Invoice -> Payment: DeleteBehavior.Cascade
+
+
+--------------------------------------------------------------------------------
+N. JOB ORDER API DATA FLOW
+--------------------------------------------------------------------------------
+Endpoints:
+- GET /api/job-orders -> Handles general/engineer listing (JobOrdersController.cs).
+- GET /api/warehouse/jobs -> Handles warehouse job listing (WarehouseController.cs).
+- GET /api/accountant/jobs -> Handles accountant job listing (AccountantController.cs).
+
+Role Visibility Differences:
+- GET /api/warehouse/jobs applies an implicit query filter j.Status == JobOrderStatus.Open unless status=all is passed (WarehouseService.cs).
+- GET /api/accountant/jobs returns all jobs with billing status (AccountantService.cs).
+- GET /api/job-orders returns all jobs ordered by date (JobOrderService.cs).
+
+
+--------------------------------------------------------------------------------
+O. PARTS API DATA FLOW
+--------------------------------------------------------------------------------
+- Primary Endpoint: GET /api/warehouse/parts (WarehouseController.cs).
+- Authorization Attribute: [Authorize(Roles = "Warehouse,Owner,Engineer")] (WarehouseController.cs).
+- Root Cause of Inconsistency: The Accountant role is missing from WarehouseController's allowed roles. When an Accountant user logs in, the startup call api.getParts() hits /api/warehouse/parts and receives HTTP 403 Forbidden. The promise rejects, and the frontend state falls back to local seed data or empty arrays.
+
+
+--------------------------------------------------------------------------------
+P. FRONTEND DATA FLOW
+--------------------------------------------------------------------------------
+- State Container: Single-root React state in src/App.tsx (useState for jobOrders, wParts, vehicleList, customers, invoices).
+- API Wrapper: src/services/api.ts using standard fetch with Bearer token authentication.
+
+
+--------------------------------------------------------------------------------
+Q. FRONTEND SYNCHRONIZATION ARCHITECTURE
+--------------------------------------------------------------------------------
+- Initial Load: Handled by loadBackendData() in useEffect([], ...) in src/App.tsx on component mount.
+- Mutation Behavior: When a user creates or updates a Job Order or Part:
+  1. An HTTP POST/PUT is sent to the backend API.
+  2. The local React state in that specific tab/session is updated via setJobOrders((prev) => [newJO, ...prev]).
+  3. No refetch signal or push notification is sent to other active browser tabs or sessions.
+- Synchronization Failure Cause: Because there are no WebSockets (SignalR), no SSE, no periodic background polling, and no cross-session invalidation, screens already open in other browser sessions retain stale state until the user reloads the browser (F5).
+
+
+--------------------------------------------------------------------------------
+R. ROLE PERMISSION / VISIBILITY MATRIX
+--------------------------------------------------------------------------------
+Feature / Action          | Owner | Engineer | Warehouse | Accountant | Enforced Level
+--------------------------+-------+----------+-----------+------------+---------------------------
+View Job Orders           | Yes   | Yes      | Yes (Open)| Yes        | Backend + Frontend
+Create Job Order          | Yes   | Yes      | No        | No         | Frontend UI + API route
+Edit Job Order            | Yes   | Yes      | No        | Yes        | Controller Auth
+View Parts Catalog        | Yes   | Yes      | Yes       | Block (403)| WarehouseController Auth
+Add New Part              | Yes   | Yes      | Yes (No $)| No         | WarehouseController Auth
+View Selling / Cost Price | Yes   | Yes      | Forbidden | Yes        | Backend controller check
+Edit Part Prices          | Yes   | No       | No        | Yes        | AccountantController
+View Invoices / Payments  | Yes   | No       | No        | Yes        | AccountantController
+
+
+--------------------------------------------------------------------------------
+S. DATABASE DATA INTEGRITY FINDINGS
+--------------------------------------------------------------------------------
+1. Soft Delete Cascades: Customer and Vehicle use soft delete (IsDeleted = 1). JobOrders do not use soft delete. If a Customer or Vehicle is soft-deleted, their historical JobOrders remain intact in JobOrders table, but querying through EF Core with query filters hides the parent Customer or Vehicle unless explicitly configured.
+2. Unconstrained Engineer Name: JobOrder.Engineer is stored as plain text. If an engineer's full name is altered in AspNetUsers, existing JobOrders retain the old string name.
+3. Inventory Movement Audit: Stock movements correctly record quantity additions (StockIn) and deductions (Issue), maintaining an audit log alongside Part.CurrentQty.
+
+
+--------------------------------------------------------------------------------
+T. PRODUCTION VS LOCAL DIFFERENCES
+--------------------------------------------------------------------------------
+1. Database Instances: Local development connects to local SQL Server Express (DESKTOP-7SICAF1\SQLEXPRESS). Production connects to an Azure SQL / SQL Server instance configured via environment variable ConnectionStrings__DefaultConnection.
+2. Schema & Code Parity: Both environments run the exact same EF Core migrations and ASP.NET Core codebase compiled from Program.cs.
+
+
+--------------------------------------------------------------------------------
+U. CONFIRMED ROOT CAUSES
+--------------------------------------------------------------------------------
+1. Accountant 403 on Parts (Problem 2 Root Cause): [Authorize(Roles = "Warehouse,Owner,Engineer")] on WarehouseController excludes Accountant. api.getParts() fails for Accountant users on startup.
+2. Lack of Cross-Tab / Cross-Session Synchronization (Problem 3 Root Cause): Data is fetched ONCE on component mount. Local state mutations do not trigger refetches or WebSocket updates in other active sessions.
+3. Role-Specific Job Order Filtering & Endpoint Divergence (Problem 1 Root Cause): Warehouse queries /api/warehouse/jobs (filtered to Open), Accountant queries /api/accountant/jobs, and Engineer queries /api/job-orders. If the initial GET /api/job-orders call fails during login/token initialization, local React state defaults to empty.
+
+
+--------------------------------------------------------------------------------
+V. LIKELY ROOT CAUSES
+--------------------------------------------------------------------------------
+1. JWT Claim Mismatch during Initial Load: If an Engineer logs in and loadBackendData() executes before the token is properly attached to localStorage, the initial Promise.allSettled request returns 401 Unauthorized, leaving jobOrders state unpopulated until manual page refresh.
+
+
+--------------------------------------------------------------------------------
+W. EVIDENCE FOR EACH ROOT CAUSE
+--------------------------------------------------------------------------------
+1. Evidence for Accountant 403 on Parts:
+   - File: Controllers/Warehouse/WarehouseController.cs:L8
+   - Code: [Authorize(Roles = "Warehouse,Owner,Engineer")]
+   - File: Services/Auth/AuthService.cs:L84 assigns ClaimTypes.Role = "Accountant".
+   - File: src/App.tsx:L14385 calls api.getParts() on mount for ALL authenticated users.
+   - Proof: Accountant JWT role ("Accountant") fails authorization check on WarehouseController, returning HTTP 403. Promise.allSettled rejects the parts item.
+
+2. Evidence for Missing Synchronization:
+   - File: src/App.tsx:L14378-L14607
+   - Code: useEffect(() => { loadBackendData(); }, []);
+   - File: src/App.tsx:L15066-L15070
+   - Code: setJobOrders((prev) => [newJO, ...prev]);
+   - Proof: State is mutated in memory for the single active browser instance. No WebSocket (SignalR) connection or polling loop exists to update other client instances.
+
+3. Evidence for Engineer Job Order Visibility:
+   - File: Controllers/Engineer/JobOrdersController.cs:L50-L57
+   - Code: dto.Engineer = User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name;
+   - File: Services/Engineer/JobOrderService.cs:L200-L213
+   - Proof: Engineer association relies on string matching rather than a database foreign key.
+
+
+--------------------------------------------------------------------------------
+X. ISSUES THAT ARE RELATED
+--------------------------------------------------------------------------------
+- Parts Inconsistency & Role Authorization: The intermittent disappearance of Parts is directly linked to whether the logged-in user role is permitted to call GET /api/warehouse/parts.
+- Job Order Visibility & Initial API Load Rejection: Missing job orders for Engineers occur when token initialization delays cause the initial api.getJobOrders() request to reject on startup.
+
+
+--------------------------------------------------------------------------------
+Y. ISSUES THAT ARE INDEPENDENT
+--------------------------------------------------------------------------------
+- Cross-Screen Synchronization: The requirement for browser refresh (F5) to see newly created records across different open sessions is an architectural frontend/real-time state limitation, independent of role authorization filters or SQL Server database queries.
+
+
+--------------------------------------------------------------------------------
+Z. RECOMMENDED FIX PLAN (For Reference Only — No Changes Made)
+--------------------------------------------------------------------------------
+1. Role Authorization Fix:
+   - Update [Authorize(Roles = "Warehouse,Owner,Engineer,Accountant")] on WarehouseController or create a dedicated shared endpoint for Parts reading so Accountant users can access inventory data without receiving 403 errors.
+2. Synchronization Fix:
+   - Introduce light polling (e.g. interval-based refetch in active windows) or ASP.NET Core SignalR hub notifications so mutations broadcast cache invalidation events to active browser tabs.
+3. Engineer Association Fix:
+   - Standardize engineer identification by adding an explicit EngineerId reference linked to ApplicationUser.Id while maintaining backward compatibility with existing string fields.
+
+================================================================================
+VERIFICATION OF SCOPE COMPLIANCE
+- Files Modified: 0 (Code/Database untouched)
+- Diagnostic Result: Complete system analysis delivered.
+================================================================================

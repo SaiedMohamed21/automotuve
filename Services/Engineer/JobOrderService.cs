@@ -73,9 +73,58 @@ namespace StarAutoCenter.Services.Engineer
                 .Include(j => j.Customer)
                 .Include(j => j.Vehicle)
                 .Include(j => j.WorkItems)
+                .Include(j => j.IssuedParts)
+                    .ThenInclude(ip => ip.Part)
+                .Include(j => j.AdditionalExpenses)
+                .Include(j => j.LaborItems)
+                .Include(j => j.Invoice)
                 .FirstOrDefaultAsync(j => j.Number == number);
 
             if (jo == null) return null;
+
+            var issuedParts = jo.IssuedParts.Select(ip => new StarAutoCenter.DTOs.Accountant.IssuedPartDto
+            {
+                PartId = ip.PartId,
+                PartName = ip.Part.Name,
+                PartNumber = ip.Part.Number,
+                Qty = ip.Qty,
+                SellingPrice = ip.Part.SellingPrice,
+                Total = ip.Qty * ip.Part.SellingPrice
+            }).ToList();
+
+            var expenses = jo.AdditionalExpenses.Select(e => new StarAutoCenter.DTOs.Accountant.AdditionalExpenseDto
+            {
+                Id = e.Id,
+                Description = e.Description,
+                Amount = e.Amount
+            }).ToList();
+
+            var laborItems = jo.LaborItems
+                .OrderBy(l => l.SortOrder)
+                .ThenBy(l => l.Id)
+                .Select(l => new StarAutoCenter.DTOs.Accountant.LaborItemDto
+                {
+                    Id = l.Id,
+                    Description = l.Description,
+                    Amount = l.Amount,
+                    SortOrder = l.SortOrder
+                }).ToList();
+
+            if (laborItems.Count == 0 && jo.LaborAmount > 0)
+            {
+                laborItems.Add(new StarAutoCenter.DTOs.Accountant.LaborItemDto
+                {
+                    Id = 0,
+                    Description = "Workshop Labor",
+                    Amount = jo.LaborAmount,
+                    SortOrder = 0
+                });
+            }
+
+            var partsTotal = jo.Invoice?.PartsTotal ?? issuedParts.Sum(p => p.Total);
+            var laborAmount = jo.Invoice?.LaborAmount ?? (laborItems.Count > 0 ? laborItems.Sum(l => l.Amount) : jo.LaborAmount);
+            var expensesTotal = jo.Invoice?.ExpensesTotal ?? expenses.Sum(e => e.Amount);
+            var grandTotal = jo.Invoice?.GrandTotal ?? (partsTotal + laborAmount + expensesTotal);
 
             return new JobOrderDetailsDto
             {
@@ -112,7 +161,16 @@ namespace StarAutoCenter.Services.Engineer
                 {
                     Item = w.Item,
                     Note = w.Note
-                }).ToList()
+                }).ToList(),
+                LaborAmount = laborAmount,
+                LaborItems = laborItems,
+                IssuedParts = issuedParts,
+                AdditionalExpenses = expenses,
+                PartsTotal = partsTotal,
+                ExpensesTotal = expensesTotal,
+                GrandTotal = grandTotal,
+                HasInvoice = jo.Invoice != null,
+                InvoiceNumber = jo.Invoice?.InvoiceNumber
             };
         }
 
@@ -122,9 +180,58 @@ namespace StarAutoCenter.Services.Engineer
                 .Include(j => j.Customer)
                 .Include(j => j.Vehicle)
                 .Include(j => j.WorkItems)
+                .Include(j => j.IssuedParts)
+                    .ThenInclude(ip => ip.Part)
+                .Include(j => j.AdditionalExpenses)
+                .Include(j => j.LaborItems)
+                .Include(j => j.Invoice)
                 .FirstOrDefaultAsync(j => j.Id == id);
 
             if (jo == null) return null;
+
+            var issuedParts = jo.IssuedParts.Select(ip => new StarAutoCenter.DTOs.Accountant.IssuedPartDto
+            {
+                PartId = ip.PartId,
+                PartName = ip.Part.Name,
+                PartNumber = ip.Part.Number,
+                Qty = ip.Qty,
+                SellingPrice = ip.Part.SellingPrice,
+                Total = ip.Qty * ip.Part.SellingPrice
+            }).ToList();
+
+            var expenses = jo.AdditionalExpenses.Select(e => new StarAutoCenter.DTOs.Accountant.AdditionalExpenseDto
+            {
+                Id = e.Id,
+                Description = e.Description,
+                Amount = e.Amount
+            }).ToList();
+
+            var laborItems = jo.LaborItems
+                .OrderBy(l => l.SortOrder)
+                .ThenBy(l => l.Id)
+                .Select(l => new StarAutoCenter.DTOs.Accountant.LaborItemDto
+                {
+                    Id = l.Id,
+                    Description = l.Description,
+                    Amount = l.Amount,
+                    SortOrder = l.SortOrder
+                }).ToList();
+
+            if (laborItems.Count == 0 && jo.LaborAmount > 0)
+            {
+                laborItems.Add(new StarAutoCenter.DTOs.Accountant.LaborItemDto
+                {
+                    Id = 0,
+                    Description = "Workshop Labor",
+                    Amount = jo.LaborAmount,
+                    SortOrder = 0
+                });
+            }
+
+            var partsTotal = jo.Invoice?.PartsTotal ?? issuedParts.Sum(p => p.Total);
+            var laborAmount = jo.Invoice?.LaborAmount ?? (laborItems.Count > 0 ? laborItems.Sum(l => l.Amount) : jo.LaborAmount);
+            var expensesTotal = jo.Invoice?.ExpensesTotal ?? expenses.Sum(e => e.Amount);
+            var grandTotal = jo.Invoice?.GrandTotal ?? (partsTotal + laborAmount + expensesTotal);
 
             return new JobOrderDetailsDto
             {
@@ -161,7 +268,16 @@ namespace StarAutoCenter.Services.Engineer
                 {
                     Item = w.Item,
                     Note = w.Note
-                }).ToList()
+                }).ToList(),
+                LaborAmount = laborAmount,
+                LaborItems = laborItems,
+                IssuedParts = issuedParts,
+                AdditionalExpenses = expenses,
+                PartsTotal = partsTotal,
+                ExpensesTotal = expensesTotal,
+                GrandTotal = grandTotal,
+                HasInvoice = jo.Invoice != null,
+                InvoiceNumber = jo.Invoice?.InvoiceNumber
             };
         }
 

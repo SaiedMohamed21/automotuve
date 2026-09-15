@@ -2,7 +2,9 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Settings;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Settings;
 
 namespace StarAutoCenter.Controllers.Settings
@@ -12,10 +14,12 @@ namespace StarAutoCenter.Controllers.Settings
     public class WorkshopSettingsController : ControllerBase
     {
         private readonly IWorkshopSettingsService _settingsService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public WorkshopSettingsController(IWorkshopSettingsService settingsService)
+        public WorkshopSettingsController(IWorkshopSettingsService settingsService, IHubContext<DataSyncHub> hubContext)
         {
             _settingsService = settingsService;
+            _hubContext = hubContext;
         }
 
         // GET: api/settings/workshop (Accessible to any authenticated user for invoice printing & branding display)
@@ -39,6 +43,7 @@ namespace StarAutoCenter.Controllers.Settings
 
             var updatedBy = User.Identity?.Name ?? User.FindFirstValue(ClaimTypes.Email) ?? "Owner";
             var result = await _settingsService.UpdateSettingsAsync(dto, updatedBy);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "WorkshopSettings");
             return Ok(result);
         }
 
@@ -52,6 +57,7 @@ namespace StarAutoCenter.Controllers.Settings
             {
                 var updatedBy = User.Identity?.Name ?? User.FindFirstValue(ClaimTypes.Email) ?? "Owner";
                 var logoUrl = await _settingsService.UploadLogoAsync(dto.File, updatedBy);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "WorkshopSettings");
                 return Ok(new { logoUrl, message = "Logo uploaded successfully" });
             }
             catch (ArgumentException ex)
@@ -71,6 +77,7 @@ namespace StarAutoCenter.Controllers.Settings
         {
             var updatedBy = User.Identity?.Name ?? User.FindFirstValue(ClaimTypes.Email) ?? "Owner";
             await _settingsService.DeleteLogoAsync(updatedBy);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "WorkshopSettings");
             return Ok(new { message = "Logo removed successfully" });
         }
     }

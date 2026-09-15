@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using StarAutoCenter.DTOs.Suppliers;
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Services.Suppliers;
 
 namespace StarAutoCenter.Controllers.Suppliers
@@ -11,10 +13,12 @@ namespace StarAutoCenter.Controllers.Suppliers
     public class SuppliersController : ControllerBase
     {
         private readonly ISupplierService _supplierService;
+        private readonly IHubContext<DataSyncHub> _hubContext;
 
-        public SuppliersController(ISupplierService supplierService)
+        public SuppliersController(ISupplierService supplierService, IHubContext<DataSyncHub> hubContext)
         {
             _supplierService = supplierService;
+            _hubContext = hubContext;
         }
 
         [HttpGet]
@@ -51,6 +55,7 @@ namespace StarAutoCenter.Controllers.Suppliers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             var result = await _supplierService.CreateSupplierAsync(dto);
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Suppliers");
             return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
         }
 
@@ -60,6 +65,7 @@ namespace StarAutoCenter.Controllers.Suppliers
             if (!ModelState.IsValid) return BadRequest(ModelState);
             var result = await _supplierService.UpdateSupplierAsync(id, dto);
             if (result == null) return NotFound(new { message = "Supplier not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Suppliers");
             return Ok(result);
         }
 
@@ -68,6 +74,7 @@ namespace StarAutoCenter.Controllers.Suppliers
         {
             var success = await _supplierService.DeleteSupplierAsync(id);
             if (!success) return NotFound(new { message = "Supplier not found" });
+            await _hubContext.Clients.All.SendAsync("DataChanged", "Suppliers");
             return Ok(new { message = "Supplier archived successfully" });
         }
 
@@ -93,6 +100,8 @@ namespace StarAutoCenter.Controllers.Suppliers
             try
             {
                 var result = await _supplierService.CreatePurchaseAsync(id, dto);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Suppliers");
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Parts");
                 return CreatedAtAction(nameof(GetPurchaseById), new { purchaseId = result.Id }, result);
             }
             catch (KeyNotFoundException ex)
@@ -119,6 +128,7 @@ namespace StarAutoCenter.Controllers.Suppliers
             try
             {
                 var result = await _supplierService.CreatePaymentAsync(id, dto);
+                await _hubContext.Clients.All.SendAsync("DataChanged", "Suppliers");
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)

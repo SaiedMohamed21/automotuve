@@ -40,6 +40,7 @@ namespace StarAutoCenter.Models
         public JobOrder JobOrder { get; set; } = null!;
 
         // Navigation properties
+        public ICollection<InvoiceLaborItem> LaborItems { get; set; } = new List<InvoiceLaborItem>();
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     }
 }

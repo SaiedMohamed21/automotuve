@@ -154,6 +154,17 @@ namespace StarAutoCenter.DTOs.Engineer
         public List<WorkItemDto> ApprovedItems { get; set; } = new();
         public List<string> DeferredItems { get; set; } = new();
         public List<WorkItemDto> RecommendedItems { get; set; } = new();
+
+        // Financial snapshot & details
+        public decimal LaborAmount { get; set; }
+        public List<StarAutoCenter.DTOs.Accountant.LaborItemDto> LaborItems { get; set; } = new();
+        public List<StarAutoCenter.DTOs.Accountant.IssuedPartDto> IssuedParts { get; set; } = new();
+        public List<StarAutoCenter.DTOs.Accountant.AdditionalExpenseDto> AdditionalExpenses { get; set; } = new();
+        public decimal PartsTotal { get; set; }
+        public decimal ExpensesTotal { get; set; }
+        public decimal GrandTotal { get; set; }
+        public bool HasInvoice { get; set; }
+        public string? InvoiceNumber { get; set; }
     }
 
     public class UpdateJobOrderDto

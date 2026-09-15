@@ -18,6 +18,7 @@ using StarAutoCenter.Services.Suppliers;
 using StarAutoCenter.Services.Expenses;
 using StarAutoCenter.Services.Settings;
 
+using StarAutoCenter.Hubs;
 using StarAutoCenter.Models.Enums;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,6 +29,9 @@ if (!string.IsNullOrEmpty(port))
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
+
+// ── SignalR Registration ──
+builder.Services.AddSignalR();
 
 // ── Database ──
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -65,6 +69,21 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         RoleClaimType = ClaimTypes.Role,
         NameClaimType = ClaimTypes.Name
+    };
+
+    // Extract JWT token from query string for SignalR WebSocket connections
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
     };
 });
 
@@ -188,6 +207,7 @@ if (Directory.Exists(externalUploadsPath) && !string.Equals(externalUploadsPath,
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<DataSyncHub>("/hubs/sync");
 
 // ── Unauthenticated Health Endpoint ──
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));

@@ -32,6 +32,8 @@ namespace StarAutoCenter.Data
         public DbSet<SupplierPayment> SupplierPayments { get; set; }
         public DbSet<SupplierAccountTransaction> SupplierAccountTransactions { get; set; }
         public DbSet<Expense> Expenses { get; set; }
+        public DbSet<JobOrderLaborItem> JobOrderLaborItems { get; set; }
+        public DbSet<InvoiceLaborItem> InvoiceLaborItems { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -137,6 +139,20 @@ namespace StarAutoCenter.Data
                 .HasOne(e => e.JobOrder)
                 .WithMany(j => j.AdditionalExpenses)
                 .HasForeignKey(e => e.JobOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // JobOrderLaborItem - JobOrder
+            builder.Entity<JobOrderLaborItem>()
+                .HasOne(li => li.JobOrder)
+                .WithMany(j => j.LaborItems)
+                .HasForeignKey(li => li.JobOrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // InvoiceLaborItem - Invoice
+            builder.Entity<InvoiceLaborItem>()
+                .HasOne(li => li.Invoice)
+                .WithMany(i => i.LaborItems)
+                .HasForeignKey(li => li.InvoiceId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Payment - Invoice

@@ -49,7 +49,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || `Request failed with status ${response.status}`);
+    let message = errorText;
+    try {
+      const json = JSON.parse(errorText);
+      if (json && json.message) message = json.message;
+    } catch {}
+    throw new Error(message || `Request failed with status ${response.status}`);
   }
 
   if (response.status === 204) {
@@ -129,7 +134,8 @@ export const api = {
     request<any>(`/warehouse/jobs/${joNumber}/parts/${partId}`, { method: "DELETE" }),
   confirmPartsIssued: (joNumber: string) => request<any>(`/warehouse/jobs/${joNumber}/confirm`, { method: "POST" }),
   getStockMovements: (search?: string) => request<any[]>(`/warehouse/movements${search ? `?search=${encodeURIComponent(search)}` : ""}`),
-  updateStockCount: (data: any) => request<any>("/warehouse/stock-count", { method: "POST", body: JSON.stringify(data) }),
+  updateStockCount: (items: { partId: number; actualQty: number }[]) =>
+    request<any>("/warehouse/stock-count", { method: "POST", body: JSON.stringify(items) }),
 
   // Owner
   getOwnerDashboard: (params?: { startDate?: string; endDate?: string; period?: string }) => {
@@ -159,9 +165,11 @@ export const api = {
     return request<any[]>(`/accountant/jobs${qStr ? `?${qStr}` : ""}`);
   },
   getAccountantJobDetails: (joNumber: string) => request<any>(`/accountant/jobs/${joNumber}`),
-  saveWorkFound: (joNumber: string, items: { description: string; approved: boolean }[]) =>
+  saveWorkFound: (joNumber: string, items: { description: string; note?: string; approved: boolean }[]) =>
     request<any>(`/accountant/jobs/${joNumber}/work-found`, { method: "POST", body: JSON.stringify({ items }) }),
-  createInvoice: (joNumber: string, data: { laborAmount: number; additionalExpenses: { description: string; amount: number }[] }) =>
+  saveJobOrderLabor: (joNumber: string, laborItems: { description: string; amount: number; sortOrder?: number }[]) =>
+    request<any>(`/accountant/jobs/${joNumber}/labor`, { method: "POST", body: JSON.stringify({ laborItems }) }),
+  createInvoice: (joNumber: string, data: { laborAmount?: number; laborItems?: { description: string; amount: number; sortOrder?: number }[]; additionalExpenses: { description: string; amount: number }[] }) =>
     request<any>(`/accountant/jobs/${joNumber}/invoice`, { method: "POST", body: JSON.stringify(data) }),
   getInvoices: (params?: { search?: string; paymentStatus?: string }) => {
     const query = new URLSearchParams();

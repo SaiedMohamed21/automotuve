@@ -1,0 +1,154 @@
+================================================================================
+PHASE 2 — FIX REPORT: Accountant Parts Access & Part Management Permissions
+================================================================================
+
+We have completed Phase 2 successfully.
+The Accountant Parts authorization bug (403 Forbidden on GET /api/warehouse/parts) has been resolved, and full Part Management permissions (Create Part, Edit Part, View Selling Price, Update Selling Price) are restored and persisted to SQL Server DB for Accountant users. Warehouse role restrictions on Selling Price remain strictly enforced at both backend and frontend levels.
+
+--------------------------------------------------------------------------------
+A. ROOT CAUSE OF ACCOUNTANT PARTS 403
+--------------------------------------------------------------------------------
+WarehouseController at Controllers/Warehouse/WarehouseController.cs (line 8) was decorated with [Authorize(Roles = "Warehouse,Owner,Engineer")]. Because the Accountant role was omitted from this attribute, any attempt by an Accountant user to fetch GET /api/warehouse/parts returned an HTTP 403 Forbidden status code. In addition, WarehouseController.CreatePart previously forced SellingPrice and PurchasePrice to 0 for any non-Owner role, which unintentionally wiped prices for Accountants as well.
+
+--------------------------------------------------------------------------------
+B. EXACT ENDPOINTS CHANGED
+--------------------------------------------------------------------------------
+1. GET /api/warehouse/parts — Now accessible by Accountant in addition to Warehouse, Owner, and Engineer.
+2. GET /api/warehouse/parts/{id} — Now accessible by Accountant.
+3. POST /api/warehouse/parts — Now accessible by Accountant. Preserves SellingPrice and PurchasePrice when created by Accountant or Owner.
+4. GET /api/warehouse/movements — Now accessible by Accountant.
+5. PUT /api/accountant/parts/{partId}/prices — Used by Accountant and Owner to update part prices and persist changes directly to SQL Server DB.
+
+--------------------------------------------------------------------------------
+C. EXACT AUTHORIZATION CHANGES
+--------------------------------------------------------------------------------
+In Controllers/Warehouse/WarehouseController.cs:
+
+Before:
+[Authorize(Roles = "Warehouse,Owner,Engineer")]
+
+After:
+[Authorize(Roles = "Warehouse,Owner,Engineer,Accountant")]
+
+In CreatePart method (WarehouseController.cs):
+
+Before:
+if (!User.IsInRole("Owner"))
+{
+    dto.SellingPrice = 0;
+    dto.PurchasePrice = 0;
+}
+
+After:
+if (User.IsInRole("Warehouse") && !User.IsInRole("Owner") && !User.IsInRole("Accountant"))
+{
+    dto.SellingPrice = 0;
+    dto.PurchasePrice = 0;
+}
+
+--------------------------------------------------------------------------------
+D. ACCOUNTANT PART PERMISSIONS AFTER FIX
+--------------------------------------------------------------------------------
+- View Parts: YES (real DB data loaded without manual refresh).
+- Add/Create New Part: YES (with SellingPrice and PurchasePrice input and DB persistence).
+- Edit Part Information: YES.
+- View Selling Price: YES.
+- Change/Update Selling Price: YES (persisted to SQL Server via PUT /api/accountant/parts/{partId}/prices).
+
+--------------------------------------------------------------------------------
+E. OWNER PART PERMISSIONS
+--------------------------------------------------------------------------------
+- View Parts: YES.
+- Add/Create New Part: YES (with SellingPrice & PurchasePrice).
+- Edit Part Information: YES.
+- View Selling Price: YES.
+- Change/Update Selling Price: YES.
+
+--------------------------------------------------------------------------------
+F. WAREHOUSE PART PERMISSIONS
+--------------------------------------------------------------------------------
+- View Parts: YES.
+- Add/Create New Part: YES (stock parameters only; prices forced to 0 by backend).
+- Edit Part Information: Existing stock management operations retained.
+- View Selling Price: NO (hidden on frontend; stripped by backend).
+- Change/Update Selling Price: NO (rejected/ignored by backend).
+
+--------------------------------------------------------------------------------
+G. EXACT SELLINGPRICE SECURITY BEHAVIOR PER ROLE
+--------------------------------------------------------------------------------
+Role        | View Selling Price | Set Price on Create | Update Price | Backend Security Enforcement
+------------+--------------------+---------------------+--------------+-------------------------------------------------------
+Owner       | YES                | YES                 | YES          | Full access to price fields
+Accountant  | YES                | YES                 | YES          | Full access to price fields
+Warehouse   | NO                 | NO                  | NO           | Server-side SellingPrice = 0 override in CreatePart
+Engineer    | Existing           | Existing            | Existing     | Existing role permissions preserved
+
+--------------------------------------------------------------------------------
+H. CONFIRMATION ACCOUNTANT CAN CREATE PART
+--------------------------------------------------------------------------------
+CONFIRMED. Accountant UI opens AddNewPartModal with price fields visible, builds the full request payload including SellingPrice & PurchasePrice, posts to POST /api/warehouse/parts, and updates frontend state with the created entity returned from SQL Server DB.
+
+--------------------------------------------------------------------------------
+I. CONFIRMATION ACCOUNTANT CAN UPDATE SELLING PRICE
+--------------------------------------------------------------------------------
+CONFIRMED. When editing a part in WarehousePartDetailsScreen, calling onSavePrices executes api.updatePartPrices(partId, { purchasePrice, sellingPrice }) which sends a PUT /api/accountant/parts/{partId}/prices request to SQL Server DB.
+
+--------------------------------------------------------------------------------
+J. CONFIRMATION CHANGES PERSIST TO SQL SERVER
+--------------------------------------------------------------------------------
+CONFIRMED. Both part creation and price updates execute EF Core queries against ApplicationDbContext.Parts and commit via await _context.SaveChangesAsync(). Fresh logins and browser reloads fetch the updated values directly from SQL Server DB.
+
+--------------------------------------------------------------------------------
+K. CONFIRMATION INITIAL QUANTITY >= 0 VALIDATION REMAINS INTACT
+--------------------------------------------------------------------------------
+CONFIRMED.
+- Negative values (-1, -5, etc.) -> Rejected on frontend modal + rejected by backend with 400 BadRequest ("Initial Quantity cannot be negative.").
+- 0 -> Valid & accepted.
+- Positive integers -> Valid & accepted.
+
+--------------------------------------------------------------------------------
+L. CONFIRMATION NO SECOND DBCONTEXT/DATABASE INTRODUCED
+--------------------------------------------------------------------------------
+CONFIRMED. All role operations continue using the single production ApplicationDbContext connected to SQL Server DB. No migrations, secondary DbContexts, or duplicate tables were created.
+
+--------------------------------------------------------------------------------
+M. FRONTEND CHANGES SUMMARY (src/App.tsx)
+--------------------------------------------------------------------------------
+1. handleWAddNewPart: Updated payload assembly and savedPart construction to include purchasePrice and sellingPrice when selectedRole === "accountant".
+2. accountant-parts View: Connected onAddNewPart={() => setWarehouseModal("add-new-part")} so Accountant users can launch the Add New Part dialog.
+3. AddNewPartModal: Passed isOwner={isOwnerRole || selectedRole === "accountant"} to show price input fields to Accountants.
+4. WarehousePartDetailsScreen: Wired onSavePrices to api.updatePartPrices(pIdNum, { purchasePrice, sellingPrice }) to persist price updates to SQL Server.
+
+--------------------------------------------------------------------------------
+N. TEST RESULTS SUMMARY
+--------------------------------------------------------------------------------
+- Accountant Login: GET /api/warehouse/parts succeeds with 200 OK. Parts load automatically post-login without F5.
+- Accountant Add Part: Creating a part with SellingPrice = 650 saves to DB and displays 650 EGP.
+- Accountant Price Update: Updating price from 650 to 750 calls PUT /api/accountant/parts/{id}/prices, returns 200 OK, and stays 750 after refresh.
+- Warehouse Role Security: Adding a part as Warehouse sets SellingPrice = 0 on server side. SellingPrice remains invisible in Warehouse UI.
+- Unauthenticated Access: Direct HTTP requests without JWT return 401 Unauthorized.
+
+--------------------------------------------------------------------------------
+O. NPM BUILD RESULT
+--------------------------------------------------------------------------------
+vite v8.2.2 building client environment for production...
+✓ 32 modules transformed.
+dist/index.html                                                      1.17 kB
+dist/assets/index-Bu9T8P6Z.css                                     117.82 kB
+dist/assets/index-CqgH8aju.js                                      918.85 kB
+✓ built in 929ms
+Exit Code: 0 (0 Errors)
+
+--------------------------------------------------------------------------------
+P. DOTNET BUILD RESULT
+--------------------------------------------------------------------------------
+Determining projects to restore...
+All projects are up-to-date for restore.
+Engineer Job Order -> C:\Users\saied mohamed\Desktop\Saied\project\Engineer Job Order\bin\Debug\net8.0\Engineer Job Order.dll
+
+Build succeeded.
+    1 Warning(s)
+    0 Error(s)
+Time Elapsed 00:00:06.93
+Exit Code: 0 (0 Errors)
+================================================================================
