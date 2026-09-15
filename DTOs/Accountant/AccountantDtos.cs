@@ -127,6 +127,7 @@ namespace StarAutoCenter.DTOs.Accountant
     public class CreateInvoiceDto
     {
         public decimal LaborAmount { get; set; }
+        public decimal DiscountAmount { get; set; } = 0;
         public List<LaborInputItem> LaborItems { get; set; } = new();
         public List<ExpenseInputItem> AdditionalExpenses { get; set; } = new();
     }
@@ -150,6 +151,7 @@ namespace StarAutoCenter.DTOs.Accountant
         public decimal LaborAmount { get; set; }
         public decimal ExpensesTotal { get; set; }
         public decimal GrandTotal { get; set; }
+        public decimal DiscountAmount { get; set; }
         public string PaymentStatus { get; set; } = string.Empty;
     }
 
@@ -174,6 +176,7 @@ namespace StarAutoCenter.DTOs.Accountant
         public List<AdditionalExpenseDto> AdditionalExpenses { get; set; } = new();
         public decimal ExpensesTotal { get; set; }
         public decimal GrandTotal { get; set; }
+        public decimal DiscountAmount { get; set; }
         public string PaymentStatus { get; set; } = string.Empty;
         public decimal PaidAmount { get; set; }
         public decimal RemainingAmount { get; set; }

@@ -242,6 +242,7 @@ interface Invoice {
   additionalExpenses: AdditionalExpense[];
   expensesTotal: number;
   grandTotal: number;
+  discountAmount?: number;
   paymentStatus: "Unpaid" | "Partially Paid" | "Paid";
 }
 
@@ -400,6 +401,7 @@ function normalizeInvoice(i: any): Invoice {
     additionalExpenses: Array.isArray(i.additionalExpenses) ? i.additionalExpenses : [],
     expensesTotal: i.expensesTotal || 0,
     grandTotal: i.grandTotal || 0,
+    discountAmount: Number(i.discountAmount) || 0,
     paymentStatus: i.paymentStatus || "Unpaid",
   };
 }
@@ -2984,7 +2986,7 @@ function JobOrderDetailsScreen({
   issuedParts?: WIssuedPart[];
   partsPriceMap?: Record<string, number>;
   parts?: WPart[];
-  onCreateInvoice?: (laborItems: LaborItem[], expenses: AdditionalExpense[]) => void;
+  onCreateInvoice?: (laborItems: LaborItem[], expenses: AdditionalExpense[], discountAmount?: number) => void;
   workshopSettings?: WorkshopSettings | null;
   onPrintJobOrder?: (detail: JoDetail) => void;
 }) {
@@ -3097,6 +3099,9 @@ function JobOrderDetailsScreen({
     return sum + (isNaN(n) || n < 0 ? 0 : n);
   }, 0);
   const grandTotal = partsTotal + laborTotal + expensesTotal;
+  const [discountInput, setDiscountInput] = useState<string>("0");
+  const discountVal = Math.max(0, Math.min(grandTotal, parseFloat(discountInput) || 0));
+  const afterDiscount = Math.max(0, grandTotal - discountVal);
 
   function addLaborItem() {
     setLaborItems((prev) => [...prev, { id: `labor-${Date.now()}`, description: "", amount: "" }]);
@@ -3791,14 +3796,51 @@ function JobOrderDetailsScreen({
                           </div>
                         )}
                         <div className="border-t border-[#e5e7eb] pt-3 flex justify-between items-center">
-                          <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#101828]">Grand Total</span>
+                          <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[15px] text-[#101828]">Before Discount</span>
                           <span className="font-['JetBrains_Mono:Bold',sans-serif] font-bold text-[18px] text-[#0f2340]">{grandTotal.toLocaleString()} EGP</span>
+                        </div>
+
+                        {/* Optional Discount Input */}
+                        <div className="pt-2.5 border-t border-[#e5e7eb] space-y-2">
+                          <div className="flex justify-between items-center">
+                            <label className="font-['Inter:Medium',sans-serif] font-medium text-[13px] text-[#364153]">
+                              Discount (Optional)
+                            </label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={grandTotal}
+                                placeholder="0"
+                                value={discountInput}
+                                onChange={(e) => setDiscountInput(e.target.value)}
+                                className="h-8 px-2.5 border border-[#e5e7eb] rounded-md font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#101828] outline-none focus:border-[#0f2340] w-28 text-right"
+                              />
+                              <span className="font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282]">EGP</span>
+                            </div>
+                          </div>
+                          {discountVal > 0 && (
+                            <div className="space-y-1 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg p-2.5 text-[12px]">
+                              <div className="flex justify-between text-[#6a7282]">
+                                <span>Before Discount</span>
+                                <span className="font-mono">{grandTotal.toLocaleString()} EGP</span>
+                              </div>
+                              <div className="flex justify-between text-[#e7000b] font-medium">
+                                <span>Discount</span>
+                                <span className="font-mono">-{discountVal.toLocaleString()} EGP</span>
+                              </div>
+                              <div className="flex justify-between border-t border-[#bbf7d0] pt-1 font-bold text-[#0f2340]">
+                                <span>After Discount (Amount Due)</span>
+                                <span className="font-mono">{afterDiscount.toLocaleString()} EGP</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       <button
                         onClick={() => {
-                          if (onCreateInvoice) onCreateInvoice(laborItems, expenses);
+                          if (onCreateInvoice) onCreateInvoice(laborItems, expenses, discountVal);
                           setInvoiceSubmitted(true);
                         }}
                         className="w-full py-3 bg-[#0f2340] text-white font-['Inter:Semi_Bold',sans-serif] font-semibold text-[14px] rounded-lg hover:bg-[#1a3560] transition-colors shadow-md"
@@ -8893,9 +8935,6 @@ function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: Workshop
   const validExpenses = (inv.additionalExpenses ?? []).filter((e) => e.description.trim() && parseFloat(e.amount) > 0);
   const invPayments = inv.payments ?? [];
   const totalPaid = invPayments.reduce((s, p) => s + p.amount, 0);
-  const remaining = Math.max(0, inv.grandTotal - totalPaid);
-  const printPayStatus = totalPaid <= 0 ? "UNPAID" : totalPaid >= inv.grandTotal ? "PAID" : "PARTIALLY PAID";
-  const printPayColor = totalPaid <= 0 ? "#e7000b" : totalPaid >= inv.grandTotal ? "#008236" : "#d97706";
 
   const companyName = settings?.companyName || "SOS Motor Works";
   const address = settings?.address || "شارع شنزو آبي، الحي العاشر، مدينة نصر، القاهرة، بجوار سنتر شبانة";
@@ -8911,6 +8950,11 @@ function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: Workshop
   const expTotal = validExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
   const computedGrand = inv.partsTotal + laborTotal + expTotal;
   const grandTotal = computedGrand > 0 ? computedGrand : inv.grandTotal;
+  const discountVal = inv.discountAmount || 0;
+  const amountDue = Math.max(0, grandTotal - discountVal);
+  const remaining = Math.max(0, amountDue - totalPaid);
+  const printPayStatus = totalPaid <= 0 ? "UNPAID" : totalPaid >= amountDue ? "PAID" : "PARTIALLY PAID";
+  const printPayColor = totalPaid <= 0 ? "#e7000b" : totalPaid >= amountDue ? "#008236" : "#d97706";
 
   const s: Record<string, React.CSSProperties> = {
     page: { width: "210mm", minHeight: "297mm", margin: "0 auto", padding: "10mm 12mm 8mm", fontFamily: "system-ui, -apple-system, 'Segoe UI', Arial, sans-serif", boxSizing: "border-box", background: "white", color: "#101828", fontSize: "12px", display: "flex", flexDirection: "column" },
@@ -9062,7 +9106,7 @@ function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: Workshop
         </div>
       )}
 
-      {/* ── Grand Total ─────────────────────────────────────────────── */}
+      {/* ── Grand Total / Discount ─────────────────────────────────── */}
       <div style={{ border: "2px solid #0f2340", borderRadius: "7px", overflow: "hidden", marginBottom: "4mm" }}>
         <div style={{ padding: "4px 10px", background: "#f9fafb" }}>
           {[
@@ -9075,10 +9119,22 @@ function PrintInvoiceView({ inv, settings }: { inv: Invoice; settings?: Workshop
               <span>{Number(val).toLocaleString()} EGP</span>
             </div>
           ))}
+          {discountVal > 0 && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "11px", color: "#364153", fontWeight: 600, borderTop: "1px solid #e5e7eb" }}>
+                <span>Before Discount</span>
+                <span>{grandTotal.toLocaleString()} EGP</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: "11px", color: "#e7000b", fontWeight: 600 }}>
+                <span>Discount</span>
+                <span>{discountVal.toLocaleString()} EGP</span>
+              </div>
+            </>
+          )}
         </div>
         <div style={{ background: "#0f2340", display: "flex", justifyContent: "space-between", padding: "8px 12px" }}>
-          <span style={{ color: "white", fontWeight: 700, fontSize: "15px" }}>GRAND TOTAL</span>
-          <span style={{ color: "white", fontWeight: 700, fontSize: "17px" }}>{grandTotal.toLocaleString()} EGP</span>
+          <span style={{ color: "white", fontWeight: 700, fontSize: "15px" }}>{discountVal > 0 ? "AFTER DISCOUNT" : "GRAND TOTAL"}</span>
+          <span style={{ color: "white", fontWeight: 700, fontSize: "17px" }}>{amountDue.toLocaleString()} EGP</span>
         </div>
       </div>
 
@@ -9144,16 +9200,14 @@ function AccountantInvoiceDetailsScreen({
   const [showPayModal, setShowPayModal] = useState(false);
   const validExpenses = (invoice.additionalExpenses ?? []).filter((e) => e && e.description && e.description.trim() && parseFloat(e.amount) > 0);
   // Payment derived values
+  const discountVal = invoice.discountAmount || 0;
+  const amountDue = Math.max(0, (invoice.grandTotal ?? 0) - discountVal);
   const payments = invoice.payments ?? [];
-  const totalPaid = invoice.paidAmount !== undefined && invoice.paidAmount > 0
-    ? invoice.paidAmount
-    : payments.reduce((s, p) => s + p.amount, 0);
-  const remaining = invoice.remainingAmount !== undefined
-    ? invoice.remainingAmount
-    : Math.max(0, (invoice.grandTotal ?? 0) - totalPaid);
-  const paymentStatus: string = invoice.paymentStatus || (totalPaid <= 0 ? "Unpaid" : totalPaid >= (invoice.grandTotal ?? 0) ? "Paid" : "Partially Paid");
+  const totalPaid = payments.reduce((s, p) => s + (p.amount || 0), 0);
+  const remaining = Math.max(0, amountDue - totalPaid);
+  const paymentStatus: string = totalPaid <= 0 ? "Unpaid" : totalPaid >= amountDue ? "Paid" : "Partially Paid";
   const methodTotals: Record<InvoicePaymentMethod, number> = { Cash: 0, Visa: 0, InstaPay: 0, Wallet: 0 };
-  payments.forEach(p => { methodTotals[p.method] = (methodTotals[p.method] ?? 0) + p.amount; });
+  payments.forEach(p => { if (p.method) methodTotals[p.method] = (methodTotals[p.method] ?? 0) + (p.amount || 0); });
 
   if (showPrint) {
     return (
@@ -9324,10 +9378,22 @@ function AccountantInvoiceDetailsScreen({
                 <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px] text-white/80">{Number(val || 0).toLocaleString()} EGP</span>
               </div>
             ))}
+            {discountVal > 0 && (
+              <>
+                <div className="flex justify-between border-t border-white/10 pt-2 text-[#99a1af]">
+                  <span className="font-['Inter:Regular',sans-serif] font-normal text-[13px]">Before Discount</span>
+                  <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px]">{(invoice.grandTotal ?? 0).toLocaleString()} EGP</span>
+                </div>
+                <div className="flex justify-between text-red-400">
+                  <span className="font-['Inter:Regular',sans-serif] font-normal text-[13px]">Discount</span>
+                  <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[13px]">-{discountVal.toLocaleString()} EGP</span>
+                </div>
+              </>
+            )}
           </div>
           <div className="border-t border-white/20 pt-3 flex justify-between">
-            <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[16px] text-white">Grand Total</span>
-            <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[20px] text-white font-semibold">{(invoice.grandTotal ?? 0).toLocaleString()} EGP</span>
+            <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[16px] text-white">{discountVal > 0 ? "After Discount" : "Grand Total"}</span>
+            <span className="font-['JetBrains_Mono:Regular',sans-serif] font-normal text-[20px] text-white font-semibold">{amountDue.toLocaleString()} EGP</span>
           </div>
         </div>
 
@@ -9347,7 +9413,7 @@ function AccountantInvoiceDetailsScreen({
           </div>
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: "Invoice Total", value: invoice.grandTotal ?? 0, color: "text-[#101828]" },
+              { label: discountVal > 0 ? "Amount Due" : "Invoice Total", value: amountDue, color: "text-[#101828]" },
               { label: "Total Paid", value: totalPaid, color: "text-[#008236]" },
               { label: "Remaining", value: Math.max(0, remaining), color: remaining <= 0 ? "text-[#6a7282]" : "text-amber-700" },
             ].map(c => (
@@ -9455,38 +9521,72 @@ function AccountantInvoiceDetailsScreen({
 
 // ─── Accountant: Payments Report ─────────────────────────────────────────
 
-function AccountantPaymentsScreen({ invoices }: { invoices: Invoice[] }) {
-  const [methodFilter, setMethodFilter] = useState<"All" | InvoicePaymentMethod>("All");
+function AccountantPaymentsScreen({ invoices }: { invoices?: Invoice[] }) {
+  const [methodFilter, setMethodFilter] = useState<"All" | InvoicePaymentMethod | string>("All");
   const [search, setSearch] = useState("");
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Flatten all payment transactions from all invoices
-  const allTransactions: (InvoicePayment & { invoiceNumber: string; jobOrderNumber: string; customerName: string })[] = [];
-  invoices.forEach(inv => {
-    (inv.payments ?? []).forEach(p => {
-      allTransactions.push({ ...p, invoiceNumber: inv.invoiceNumber, jobOrderNumber: inv.jobOrderNumber, customerName: inv.customerName });
-    });
+  const loadPayments = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    api.getPayments()
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setPayments(data);
+        } else {
+          setPayments([]);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load payments:", err);
+        setError("Failed to load payment transactions from server.");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadPayments();
+  }, [loadPayments]);
+
+  const methodTotals: Record<string, number> = { Cash: 0, Visa: 0, InstaPay: 0, Wallet: 0, Card: 0, BankTransfer: 0 };
+  payments.forEach(t => {
+    const m = t.method || "Cash";
+    methodTotals[m] = (methodTotals[m] ?? 0) + (t.amount || 0);
   });
+  const grandTotal = payments.reduce((s, t) => s + (t.amount || 0), 0);
 
-  // Sort newest first
-  allTransactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-  const filtered = allTransactions.filter(t => {
+  const filtered = payments.filter(t => {
     const matchMethod = methodFilter === "All" || t.method === methodFilter;
     const q = search.toLowerCase();
-    const matchSearch = !q || t.invoiceNumber.toLowerCase().includes(q) || t.customerName.toLowerCase().includes(q) || t.jobOrderNumber.toLowerCase().includes(q);
+    const matchSearch = !q ||
+      (t.invoiceNumber && t.invoiceNumber.toLowerCase().includes(q)) ||
+      (t.customerName && t.customerName.toLowerCase().includes(q)) ||
+      (t.jobOrderNumber && t.jobOrderNumber.toLowerCase().includes(q)) ||
+      (t.note && t.note.toLowerCase().includes(q));
     return matchMethod && matchSearch;
   });
 
-  const methodTotals: Record<string, number> = { Cash: 0, Visa: 0, InstaPay: 0, Wallet: 0 };
-  allTransactions.forEach(t => { methodTotals[t.method] = (methodTotals[t.method] ?? 0) + t.amount; });
-  const grandTotal = Object.values(methodTotals).reduce((s, v) => s + v, 0);
-
-  const methodIcons: Record<string, string> = { Cash: "💵", Visa: "💳", InstaPay: "📱", Wallet: "👜" };
-  const methodColors: Record<string, string> = { Cash: "text-[#008236]", Visa: "text-[#1447e6]", InstaPay: "text-[#7c3aed]", Wallet: "text-amber-700" };
+  const methodIcons: Record<string, string> = { Cash: "💵", Visa: "💳", InstaPay: "📱", Wallet: "👜", Card: "💳", BankTransfer: "🏛️" };
+  const methodColors: Record<string, string> = { Cash: "text-[#008236]", Visa: "text-[#1447e6]", InstaPay: "text-[#7c3aed]", Wallet: "text-amber-700", Card: "text-[#1447e6]", BankTransfer: "text-teal-700" };
 
   return (
     <div className="absolute left-[168px] right-0 top-[56px] bottom-0 overflow-y-auto bg-[#f3f4f6]">
       <div className="p-6 space-y-5">
+
+        {/* Error State */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">⚠️</span>
+              <span className="font-['Inter:Medium',sans-serif] text-[14px]">{error}</span>
+            </div>
+            <button onClick={loadPayments} className="px-4 py-1.5 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 transition-colors">
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-5 gap-4">
@@ -9517,10 +9617,13 @@ function AccountantPaymentsScreen({ invoices }: { invoices: Invoice[] }) {
               placeholder="Search by invoice #, customer, job order…"
               className="w-full bg-white border border-[#d1d5dc] rounded-[6px] pl-9 pr-4 py-2 text-[14px] font-['Inter:Regular',sans-serif] text-[#101828] placeholder:text-[#99a1af] outline-none focus:border-[#0f2340]" />
           </div>
-          <select value={methodFilter} onChange={e => setMethodFilter(e.target.value as "All" | InvoicePaymentMethod)}
+          <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
             className="bg-white border border-[#e5e7eb] rounded-[8px] h-[40px] px-4 text-[14px] font-['Inter:Regular',sans-serif] text-[#111827] outline-none cursor-pointer">
             {["All","Cash","Visa","InstaPay","Wallet"].map(s => <option key={s}>{s}</option>)}
           </select>
+          <button onClick={loadPayments} className="px-3 py-2 bg-white border border-[#e5e7eb] rounded-[8px] text-[13px] text-[#364153] hover:bg-[#f9fafb] transition-colors" title="Refresh">
+            🔄 Refresh
+          </button>
           <span className="font-['Inter:Regular',sans-serif] text-[13px] text-[#6a7282]">{filtered.length} transaction{filtered.length !== 1 ? "s" : ""}</span>
         </div>
 
@@ -9529,28 +9632,29 @@ function AccountantPaymentsScreen({ invoices }: { invoices: Invoice[] }) {
           <table className="w-full">
             <thead>
               <tr className="bg-[#f9fafb] border-b border-[#e5e7eb]">
-                {["Date","Invoice #","Job Order #","Customer","Method","Amount","Reference","By"].map(h => (
+                {["Date","Invoice #","Job Order #","Customer","Method","Amount","Note"].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-['Inter:Semi_Bold',sans-serif] font-semibold text-[10px] text-[#6a7282] tracking-[0.6px] uppercase">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center font-['Inter:Regular',sans-serif] text-[14px] text-[#99a1af]">No payment transactions found.</td></tr>
+              {loading ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center font-['Inter:Regular',sans-serif] text-[14px] text-[#6a7282]">Loading payments from server…</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center font-['Inter:Regular',sans-serif] text-[14px] text-[#99a1af]">No payment transactions found.</td></tr>
               ) : filtered.map(t => (
                 <tr key={t.id} className="border-b border-[#f3f4f6] last:border-0 hover:bg-[#f9fafb]">
                   <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282]">{t.date}</td>
-                  <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[12px] text-[#0f2340]">{t.invoiceNumber}</td>
-                  <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[12px] text-[#6a7282]">{t.jobOrderNumber}</td>
-                  <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[13px] text-[#364153]">{t.customerName}</td>
+                  <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[12px] text-[#0f2340]">{t.invoiceNumber || "—"}</td>
+                  <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[12px] text-[#6a7282]">{t.jobOrderNumber || "—"}</td>
+                  <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[13px] text-[#364153]">{t.customerName || "—"}</td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 font-['Inter:Medium',sans-serif] font-medium text-[13px] text-[#101828]">
-                      <span>{methodIcons[t.method]}</span>{t.method}
+                      <span>{methodIcons[t.method] || "💵"}</span>{t.method}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#0f2340] font-semibold">{t.amount.toLocaleString()} EGP</td>
-                  <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282]">{t.reference || "—"}</td>
-                  <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282]">{t.createdBy}</td>
+                  <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#0f2340] font-semibold">{(t.amount || 0).toLocaleString()} EGP</td>
+                  <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282]">{t.note || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -9561,7 +9665,7 @@ function AccountantPaymentsScreen({ invoices }: { invoices: Invoice[] }) {
                 {methodFilter === "All" ? "Total Collected" : `${methodFilter} Total`}
               </span>
               <span className="font-['JetBrains_Mono:Regular',sans-serif] font-bold text-[14px] text-[#0f2340]">
-                {filtered.reduce((s, t) => s + t.amount, 0).toLocaleString()} EGP
+                {filtered.reduce((s, t) => s + (t.amount || 0), 0).toLocaleString()} EGP
               </span>
             </div>
           )}
@@ -14663,7 +14767,7 @@ export default function App() {
         for (const j of jobs.value) {
           try {
             const issued = await api.getIssuedParts(j.number);
-            if (Array.isArray(issued) && issued.length > 0) {
+            if (Array.isArray(issued)) {
               setWJobPartsMap((prev) => ({
                 ...prev,
                 [j.number]: issued.map((ip: any) => ({
@@ -14962,34 +15066,82 @@ export default function App() {
     setScreen(id as Screen);
   }
 
-  function handleOpenJob(job: WJob) {
+  async function handleOpenJob(job: WJob) {
     setWSelectedJob(job);
     setWActiveNav("warehouse-jobs");
     setScreen("warehouse-parts-issue");
+    try {
+      const partsData = await api.getIssuedParts(job.number);
+      if (Array.isArray(partsData)) {
+        const mappedParts: WIssuedPart[] = partsData.map((ip: any) => ({
+          partId: String(ip.partId),
+          partName: ip.partName || "",
+          partNumber: ip.partNumber || "",
+          qty: ip.qty || 0,
+        }));
+        setWJobPartsMap((prev) => ({
+          ...prev,
+          [job.number]: mappedParts,
+        }));
+      }
+    } catch (err) {
+      console.warn("Failed to fetch issued parts for job:", err);
+    }
   }
 
-  function handleWAddPart(selections: { part: WPart; qty: number }[]) {
+  async function handleWAddPart(selections: { part: WPart; qty: number }[]) {
     if (!wSelectedJob) return;
     const joNum = wSelectedJob.number;
     let updated = [...(wJobPartsMap[joNum] ?? [])];
+    const deltaPayload: { partId: number; qty: number }[] = [];
+
     for (const { part, qty } of selections) {
-      const idx = updated.findIndex((p) => p.partId === part.id);
+      const partIdStr = String(part.id);
+      const idx = updated.findIndex((p) => String(p.partId) === partIdStr);
       if (idx >= 0) {
-        updated = updated.map((p, i) => i === idx ? { ...p, qty: p.qty + qty } : p);
+        updated = updated.map((p, i) => (i === idx ? { ...p, qty: p.qty + qty } : p));
       } else {
-        updated = [...updated, { partId: part.id, partName: part.name, partNumber: part.number, qty }];
+        updated = [
+          ...updated,
+          { partId: partIdStr, partName: part.name, partNumber: part.number, qty },
+        ];
+      }
+      const numId = parseInt(part.id, 10);
+      if (!isNaN(numId)) {
+        deltaPayload.push({ partId: numId, qty });
       }
     }
+
     setWJobPartsMap((prev) => ({ ...prev, [joNum]: updated }));
+
+    if (deltaPayload.length > 0) {
+      try {
+        await api.issuePartsToJobOrder(joNum, deltaPayload);
+      } catch (err) {
+        console.warn("Backend issuePartsToJobOrder call failed:", err);
+      }
+    }
   }
 
-  function handleWRemovePart(partId: string) {
+  async function handleWRemovePart(partId: string) {
     if (!wSelectedJob) return;
     const joNum = wSelectedJob.number;
+    const partIdStr = String(partId);
+
     setWJobPartsMap((prev) => ({
       ...prev,
-      [joNum]: (prev[joNum] ?? []).filter((p) => p.partId !== partId),
+      [joNum]: (prev[joNum] ?? []).filter((p) => String(p.partId) !== partIdStr),
     }));
+
+    const numId = parseInt(partIdStr, 10);
+    if (!isNaN(numId)) {
+      try {
+        await api.removeIssuedPart(joNum, numId);
+        await refreshWarehouseParts();
+      } catch (err) {
+        console.warn("Backend removeIssuedPart call failed:", err);
+      }
+    }
   }
 
   async function handleWAddNewPart(part: WPart) {
@@ -15090,7 +15242,7 @@ export default function App() {
         alert(`Invalid quantity for part ${ip.partName}.`);
         return;
       }
-      const part = wParts.find((p) => p.id === ip.partId);
+      const part = wParts.find((p) => String(p.id) === String(ip.partId));
       if (!part) {
         alert(`Part ${ip.partName} not found in inventory.`);
         return;
@@ -15101,49 +15253,13 @@ export default function App() {
       }
     }
 
-    // 1. Deduct quantities from parts in inventory
-    setWParts((prev) =>
-      prev.map((p) => {
-        const ip = issued.find((item) => item.partId === p.id);
-        if (!ip) return p;
-        const newQty = Math.max(0, p.currentQty - ip.qty);
-        const newStatus: WPart["status"] =
-          newQty <= 0 ? "Out of Stock" : newQty <= p.minQty ? "Low Stock" : "In Stock";
-        return { ...p, currentQty: newQty, status: newStatus };
-      })
-    );
-
-    // 2. Add Stock Out movements
-    const today = new Date();
-    const dateStr = today.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-    const newMovements: WMovement[] = issued.map((ip) => ({
-      part: ip.partName,
-      type: "Issue",
-      reference: joNum,
-      note: `Issued to ${joNum}`,
-      date: dateStr,
-      qty: -ip.qty,
-    }));
-    setWMovements((prev) => [...newMovements, ...prev]);
-
-    // 3. Mark parts confirmed for this job (Stock issued; Job Order status remains OPEN for Engineer work)
-    setWPartsConfirmedSet((prev) => new Set([...prev, joNum]));
-
-    // 4. Backend sync: issue parts and confirm issue in API (Leaves Job Order status OPEN)
     try {
-      const partsPayload = issued
-        .map((ip) => ({
-          partId: parseInt(ip.partId, 10),
-          qty: ip.qty,
-        }))
-        .filter((p) => !isNaN(p.partId));
-
-      if (partsPayload.length > 0) {
-        await api.issuePartsToJobOrder(joNum, partsPayload);
-      }
       await api.confirmPartsIssued(joNum);
-    } catch (err) {
+      setWPartsConfirmedSet((prev) => new Set([...prev, joNum]));
+      await refreshWarehouseParts();
+    } catch (err: any) {
       console.warn("Backend confirm issue call failed:", err);
+      alert(`Confirm issue failed: ${err?.message || "Unknown error"}`);
     }
   }
 
@@ -16600,7 +16716,7 @@ export default function App() {
             setPrintJoDetail(detail);
             setScreen("print-job-order");
           }}
-          onCreateInvoice={(laborItems, expenses) => {
+          onCreateInvoice={(laborItems, expenses, discountAmount) => {
             const partsForJob = wJobPartsMap[selectedJobOrder.number] ?? [];
             const priceMap = Object.fromEntries(wParts.map((p) => [p.id, p.sellingPrice]));
             const partsTotal = partsForJob.reduce((s, p) => s + p.qty * (priceMap[p.partId] ?? 0), 0);
@@ -16609,6 +16725,7 @@ export default function App() {
             const validLaborItems = laborItems.filter((l) => l.description.trim() && parseFloat(l.amount) > 0);
             const laborAmount = validLaborItems.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
             const grandTotal = partsTotal + laborAmount + expTotal;
+            const discountVal = Math.max(0, Math.min(grandTotal, discountAmount || 0));
             const today = new Date();
             const dateStr = today.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
             const newInvoice: Invoice = {
@@ -16630,6 +16747,7 @@ export default function App() {
               additionalExpenses: validExp,
               expensesTotal: expTotal,
               grandTotal,
+              discountAmount: discountVal,
               payments: [],
               paymentStatus: "Unpaid",
             };
@@ -16650,6 +16768,7 @@ export default function App() {
             });
             api.createInvoice(selectedJobOrder.number, {
               laborAmount,
+              discountAmount: discountVal,
               laborItems: validLaborItems.map((l, index) => ({
                 description: l.description,
                 amount: parseFloat(l.amount) || 0,

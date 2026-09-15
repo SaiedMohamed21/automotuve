@@ -460,6 +460,12 @@ namespace StarAutoCenter.Services.Accountant
                     .SumAsync(e => e.Amount);
                 var grandTotal = partsTotal + laborTotal + expensesTotal;
 
+                decimal discountAmount = dto.DiscountAmount;
+                if (discountAmount < 0m || discountAmount > grandTotal)
+                {
+                    return null; // Reject negative discount or discount exceeding pre-discount grand total
+                }
+
                 // Generate invoice number
                 var invoiceNumber = await GetNextInvoiceNumberAsync();
 
@@ -473,6 +479,7 @@ namespace StarAutoCenter.Services.Accountant
                     LaborAmount = laborTotal,
                     ExpensesTotal = expensesTotal,
                     GrandTotal = grandTotal,
+                    DiscountAmount = discountAmount,
                     PaymentStatus = PaymentStatus.Unpaid,
                     PaidAmount = 0
                 };
@@ -558,6 +565,7 @@ namespace StarAutoCenter.Services.Accountant
                     LaborAmount = i.LaborAmount,
                     ExpensesTotal = i.ExpensesTotal,
                     GrandTotal = i.GrandTotal,
+                    DiscountAmount = i.DiscountAmount,
                     PaymentStatus = i.PaymentStatus.ToString()
                 }).ToListAsync();
         }
@@ -604,6 +612,8 @@ namespace StarAutoCenter.Services.Accountant
                 });
             }
 
+            decimal netAmountDue = inv.GrandTotal - inv.DiscountAmount;
+
             return new InvoiceDetailsDto
             {
                 InvoiceNumber = inv.InvoiceNumber,
@@ -637,9 +647,10 @@ namespace StarAutoCenter.Services.Accountant
                 }).ToList(),
                 ExpensesTotal = inv.ExpensesTotal,
                 GrandTotal = inv.GrandTotal,
+                DiscountAmount = inv.DiscountAmount,
                 PaymentStatus = inv.PaymentStatus.ToString(),
                 PaidAmount = inv.PaidAmount,
-                RemainingAmount = inv.GrandTotal - inv.PaidAmount,
+                RemainingAmount = Math.Max(0m, netAmountDue - inv.PaidAmount),
                 Payments = inv.Payments.OrderByDescending(p => p.Date).Select(p => new PaymentDto
                 {
                     Id = p.Id,
@@ -716,8 +727,10 @@ namespace StarAutoCenter.Services.Accountant
                     };
                 }
 
+                decimal amountDue = invoice.GrandTotal - invoice.DiscountAmount;
+
                 // Reject payment if invoice is already fully paid
-                if (invoice.PaymentStatus == PaymentStatus.Paid || invoice.PaidAmount >= invoice.GrandTotal)
+                if (invoice.PaymentStatus == PaymentStatus.Paid || invoice.PaidAmount >= amountDue)
                 {
                     await transaction.RollbackAsync();
                     return new RecordPaymentResult
@@ -729,7 +742,7 @@ namespace StarAutoCenter.Services.Accountant
                 }
 
                 // Calculate exact remaining balance
-                decimal remaining = invoice.GrandTotal - invoice.PaidAmount;
+                decimal remaining = amountDue - invoice.PaidAmount;
                 if (remaining <= 0)
                 {
                     await transaction.RollbackAsync();
@@ -777,10 +790,10 @@ namespace StarAutoCenter.Services.Accountant
 
                 // Update invoice paid amount and status
                 invoice.PaidAmount += dto.Amount;
-                if (invoice.PaidAmount >= invoice.GrandTotal)
+                if (invoice.PaidAmount >= amountDue)
                 {
                     invoice.PaymentStatus = PaymentStatus.Paid;
-                    invoice.PaidAmount = invoice.GrandTotal; // Exact match
+                    invoice.PaidAmount = amountDue; // Exact match
                 }
                 else if (invoice.PaidAmount > 0)
                 {

@@ -362,9 +362,41 @@ namespace StarAutoCenter.Services.Warehouse
         {
             var issued = await _context.IssuedParts
                 .Include(ip => ip.JobOrder)
+                .Include(ip => ip.Part)
                 .FirstOrDefaultAsync(ip => ip.JobOrder.Number == joNumber && ip.PartId == partId);
 
             if (issued == null) return false;
+
+            // Check if this part was physically issued to this job order
+            var physicalMovements = await _context.StockMovements
+                .Where(m => m.Reference == joNumber && m.PartId == partId && m.Type == StockMovementType.Issue)
+                .ToListAsync();
+
+            var returnMovements = await _context.StockMovements
+                .Where(m => m.Reference == joNumber && m.PartId == partId && m.Type == StockMovementType.StockIn && m.Note != null && m.Note.Contains("Returned"))
+                .ToListAsync();
+
+            int netIssued = Math.Max(0, physicalMovements.Sum(m => Math.Abs(m.Qty)) - returnMovements.Sum(m => m.Qty));
+
+            if (netIssued > 0 && issued.Part != null)
+            {
+                // Return the physically issued quantity back to warehouse stock
+                int returnQty = Math.Min(issued.Qty, netIssued);
+                issued.Part.CurrentQty += returnQty;
+                issued.Part.Status = issued.Part.CurrentQty <= 0 ? PartStockStatus.OutOfStock
+                    : issued.Part.CurrentQty <= issued.Part.MinQty ? PartStockStatus.LowStock
+                    : PartStockStatus.InStock;
+
+                _context.StockMovements.Add(new StockMovement
+                {
+                    PartId = partId,
+                    Type = StockMovementType.StockIn,
+                    Reference = joNumber,
+                    Note = $"Returned to stock from {joNumber}",
+                    Date = DateTime.UtcNow,
+                    Qty = returnQty
+                });
+            }
 
             _context.IssuedParts.Remove(issued);
             await _context.SaveChangesAsync();
@@ -382,16 +414,40 @@ namespace StarAutoCenter.Services.Warehouse
 
             if (jo.IssuedParts == null || !jo.IssuedParts.Any()) return false;
 
-            // Strict inventory validation: verify all parts have positive qty and sufficient stock
-            foreach (var ip in jo.IssuedParts)
-            {
-                if (ip.Qty <= 0) return false;
-                if (ip.Part.CurrentQty < ip.Qty) return false;
-            }
+            // Calculate unissued quantity delta for each part on this job
+            var itemsToDeduct = new List<(IssuedPart IssuedPart, int QtyToDeduct)>();
 
             foreach (var ip in jo.IssuedParts)
             {
-                ip.Part.CurrentQty = Math.Max(0, ip.Part.CurrentQty - ip.Qty);
+                if (ip.Qty <= 0) return false;
+
+                var previouslyIssuedQty = await _context.StockMovements
+                    .Where(m => m.Reference == joNumber && m.PartId == ip.PartId && m.Type == StockMovementType.Issue)
+                    .SumAsync(m => Math.Abs(m.Qty));
+
+                var previouslyReturnedQty = await _context.StockMovements
+                    .Where(m => m.Reference == joNumber && m.PartId == ip.PartId && m.Type == StockMovementType.StockIn && m.Note != null && m.Note.Contains("Returned"))
+                    .SumAsync(m => m.Qty);
+
+                int alreadyIssuedNet = Math.Max(0, previouslyIssuedQty - previouslyReturnedQty);
+                int unissuedDelta = ip.Qty - alreadyIssuedNet;
+
+                if (unissuedDelta > 0)
+                {
+                    if (ip.Part.CurrentQty < unissuedDelta) return false; // Insufficient stock
+                    itemsToDeduct.Add((ip, unissuedDelta));
+                }
+            }
+
+            if (!itemsToDeduct.Any())
+            {
+                // All items already physically confirmed
+                return true;
+            }
+
+            foreach (var (ip, delta) in itemsToDeduct)
+            {
+                ip.Part.CurrentQty = Math.Max(0, ip.Part.CurrentQty - delta);
                 ip.Part.Status = ip.Part.CurrentQty <= 0 ? PartStockStatus.OutOfStock
                     : ip.Part.CurrentQty <= ip.Part.MinQty ? PartStockStatus.LowStock
                     : PartStockStatus.InStock;
@@ -403,7 +459,7 @@ namespace StarAutoCenter.Services.Warehouse
                     Reference = joNumber,
                     Note = $"Issued to {joNumber}",
                     Date = DateTime.UtcNow,
-                    Qty = -ip.Qty
+                    Qty = -delta
                 });
             }
 

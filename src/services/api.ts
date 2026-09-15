@@ -170,7 +170,7 @@ export const api = {
     request<any>(`/accountant/jobs/${joNumber}/work-found`, { method: "POST", body: JSON.stringify({ items }) }),
   saveJobOrderLabor: (joNumber: string, laborItems: { description: string; amount: number; sortOrder?: number }[]) =>
     request<any>(`/accountant/jobs/${joNumber}/labor`, { method: "POST", body: JSON.stringify({ laborItems }) }),
-  createInvoice: (joNumber: string, data: { laborAmount?: number; laborItems?: { description: string; amount: number; sortOrder?: number }[]; additionalExpenses: { description: string; amount: number }[] }) =>
+  createInvoice: (joNumber: string, data: { laborAmount?: number; discountAmount?: number; laborItems?: { description: string; amount: number; sortOrder?: number }[]; additionalExpenses: { description: string; amount: number }[] }) =>
     request<any>(`/accountant/jobs/${joNumber}/invoice`, { method: "POST", body: JSON.stringify(data) }),
   getInvoices: (params?: { search?: string; paymentStatus?: string }) => {
     const query = new URLSearchParams();
