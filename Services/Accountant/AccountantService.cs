@@ -701,8 +701,16 @@ namespace StarAutoCenter.Services.Accountant
                     };
                 }
 
-                if (!Enum.TryParse<PaymentMethod>(dto.Method, true, out var method))
-                    method = PaymentMethod.Cash;
+                if (string.IsNullOrWhiteSpace(dto.Method) || !Enum.TryParse<PaymentMethod>(dto.Method.Trim(), true, out var method))
+                {
+                    await transaction.RollbackAsync();
+                    return new RecordPaymentResult
+                    {
+                        Success = false,
+                        StatusCode = 400,
+                        ErrorMessage = $"Invalid payment method '{dto.Method}'. Allowed payment methods: Cash, Visa, InstaPay, Wallet, Card, BankTransfer."
+                    };
+                }
 
                 var payment = new Payment
                 {

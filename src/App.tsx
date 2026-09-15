@@ -9335,13 +9335,13 @@ function AccountantInvoiceDetailsScreen({
               </thead>
               <tbody>
                 {payments.map(p => {
-                  const methodIcon: Record<string,string> = { Cash: "💵", Visa: "💳", InstaPay: "📱", Wallet: "👜" };
+                  const methodIcon: Record<string,string> = { Cash: "💵", Visa: "💳", InstaPay: "📱", Wallet: "👜", Card: "💳", BankTransfer: "🏛️" };
                   return (
                     <tr key={p.id} className="border-b border-[#f3f4f6] last:border-0 hover:bg-[#f9fafb]">
                       <td className="px-4 py-3 font-['Inter:Regular',sans-serif] text-[12px] text-[#6a7282]">{p.date}</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5 font-['Inter:Medium',sans-serif] font-medium text-[13px] text-[#101828]">
-                          <span>{methodIcon[p.method]}</span>{p.method}
+                          <span>{methodIcon[p.method] || "💵"}</span>{p.method}
                         </span>
                       </td>
                       <td className="px-4 py-3 font-['JetBrains_Mono:Regular',sans-serif] text-[13px] text-[#0f2340] font-semibold">{p.amount.toLocaleString()} EGP</td>
